@@ -99,14 +99,50 @@ Gagal bahkan dengan 8 receiver dan `samples_per_src=1e5`. Penyebabnya **bukan**
 Nilai kerja terukur di GPU ini: `max_num_paths_per_src=1e5` untuk M ≤ 144,
 `5e4` untuk M=256.
 
-**USULAN, menunggu persetujuan** (mengubah `configs/base.yaml` berarti mengubah
-parameter eksperimen, jadi tidak dikerjakan sepihak):
+**DITERAPKAN 2026-11-10** setelah persetujuan:
 
 ```yaml
 ray_tracing:
   max_num_paths_per_src: 1.0e5   # kunci baru; 5.0e4 untuk M=256
   rx_batch_size: 256             # dari 512; <=128 untuk M=256
 ```
+
+Nilai untuk M=256 diberikan lewat file override yang mewarisi `base.yaml`,
+sesuai aturan di `CLAUDE.md`, bukan dengan mengubah default.
+
+`docs/EXPERIMENT_DESIGN.md` diperbarui bersamaan agar kode dan dokumen tetap
+cocok: paragraf baru di §4.2 yang menjelaskan mengapa `max_num_paths_per_src`
+adalah parameter pembatas memori pada array per-elemen, dan satu baris di tabel
+parameter §8.
+
+#### 2b. Enam nilai di `base.yaml` ter-parse sebagai string, bukan angka
+
+Ditemukan saat memvalidasi perubahan di butir 2. PyYAML memakai resolver
+YAML 1.1, yang hanya mengenali notasi eksponen sebagai float bila **tandanya
+eksplisit**. `3.5e9` masuk sebagai `str`, `3.5e+9` sebagai `float`.
+
+Yang terkena — semuanya sudah ada sebelum perubahan hari ini, kecuali yang
+terakhir yang baru saya tambahkan dengan kesalahan yang sama:
+
+| Kunci | Sebelum | Tipe lama |
+|---|---|---|
+| `radio.carrier_frequency_hz` | `3.5e9` | str |
+| `radio.bandwidth_hz` | `20.0e6` | str |
+| `ray_tracing.samples_per_src` | `1.0e6` | str |
+| `ray_tracing.max_num_paths_per_src` | `1.0e5` | str |
+| `training.total_timesteps` | `2.0e6` | str |
+| `training.sac.total_timesteps` | `1.0e6` | str |
+
+`training.ppo.learning_rate: 3.0e-4` selamat karena tandanya sudah ada.
+
+Ini bug yang menunggu meledak jauh dari penyebabnya: `scene.frequency =
+"3.5e9"` baru gagal di Fase 1, dan `total_timesteps` sebagai string baru gagal
+di Fase 6.
+
+**DITERAPKAN:** semua diubah ke bentuk bertanda (`3.5e+9` dst). **Nilainya
+tidak berubah**, hanya tipenya; diverifikasi ulang dengan `yaml.safe_load`.
+Aturan ini ditulis sebagai komentar di `base.yaml` agar override baru tidak
+mengulanginya.
 
 #### 3. Menurunkan `max_num_paths_per_src` memotong jalur — risiko bias diam
 

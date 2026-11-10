@@ -184,7 +184,9 @@ RIS dimodelkan sebagai **perangkat radio dengan array planar M elemen** (jarak �
 | **h**^{(r)}_{d,t} | Titik lintasan target | BS-rx (N_r) | Per titik |
 | **H**_c | BS-tx (N_t) | BS-rx (N_r) | Sekali; buang jalur LoS |
 
-Pengaturan ray tracing awal: kedalaman pantulan maks 3, pantulan spekular + difus, difraksi aktif (v1.2+), jumlah sampel per sumber disesuaikan sampai hasil stabil. **Array per-elemen** (bukan synthetic array) untuk RIS karena pengguna dan target bisa berada di dekat jarak Fraunhofer RIS; uji perbedaannya di E0. Nama API (misalnya `load_scene`, `PlanarArray`, `Transmitter`, `Receiver`, `PathSolver`) harus diverifikasi di dokumentasi versi terpasang.
+Pengaturan ray tracing awal: kedalaman pantulan maks 3, pantulan spekular + difus, difraksi aktif (v1.2+), jumlah sampel per sumber disesuaikan sampai hasil stabil. **Array per-elemen** (bukan synthetic array) untuk RIS karena pengguna dan target bisa berada di dekat jarak Fraunhofer RIS; uji perbedaannya di E0.
+
+Dengan array per-elemen, jumlah sumber ray tracing sama dengan M, sehingga **jumlah jalur maksimum per sumber** (`max_num_paths_per_src`) menjadi parameter yang membatasi memori, bukan hanya jumlah sampel. Nilainya harus dilaporkan bersama `samples_per_src` karena menurunkannya memotong jalur dan membiaskan koefisien kanal. Nilai dikunci lewat uji konvergensi di Fase 2: naikkan sampai daya terima total berubah < 0,1 dB. Nama API (misalnya `load_scene`, `PlanarArray`, `Transmitter`, `Receiver`, `PathSolver`) harus diverifikasi di dokumentasi versi terpasang.
 
 Kanal kaskade per elemen m adalah [**g**_k]_m · e^{jφ_m} · [**G**]_{m,:}. Mengalikan koefisien per hop yang dihitung sebagai link antena konsisten dengan model path loss RIS berbasis fisika sampai faktor konstan kecil (orde 1 dB untuk elemen λ/2). Faktor ini dikalibrasi di E0.
 
@@ -378,6 +380,7 @@ Library: Stable-Baselines3 + sb3-contrib. Tuning ringan hanya di set validasi, l
 | ε (NMSE ĥ_e) | −20 dB | |
 | σ_u, σ_ref, σ_max | 0,5 m, 0,5 m, 5 m | |
 | Ray tracing | max_depth 3, spekular + difus + difraksi | Sampel disesuaikan sampai stabil |
+| `max_num_paths_per_src` | 1e5 (M ≤ 144), 5e4 (M = 256) | Batas memori array per-elemen; dikunci lewat uji konvergensi §4.2 |
 | Lintasan | 400 train / 50 val / 100 test | Per scene |
 
 Semua nilai ada di `configs/base.yaml`. Satu sumber, tidak ada angka yang ditulis langsung di kode.
