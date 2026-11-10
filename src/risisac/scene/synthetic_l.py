@@ -45,10 +45,18 @@ class SyntheticLSpec:
     building_material: str
     ground_material: str
     material_thickness_m: float
+    # Keteraturan fasad. Dengan setback dan variasi tinggi = 0, tiap blok
+    # kembali menjadi satu kotak utuh (scene Fase 1 versi pertama).
+    facade_depth_m: float = 0.0
+    facade_segment_m: float = 0.0
+    facade_setback_m: float = 0.0
+    facade_height_var_m: float = 0.0
+    facade_seed: int = 1
 
     @classmethod
     def from_config(cls, cfg: dict) -> "SyntheticLSpec":
         s = cfg["scene"]["synthetic_l"]
+        f = s.get("facade", {}) or {}
         return cls(
             street_width_m=float(s["street_width_m"]),
             block_extent_m=float(s["block_extent_m"]),
@@ -56,7 +64,17 @@ class SyntheticLSpec:
             building_material=str(s["building_material"]),
             ground_material=str(s["ground_material"]),
             material_thickness_m=float(s["material_thickness_m"]),
+            facade_depth_m=float(f.get("depth_m", 0.0)),
+            facade_segment_m=float(f.get("segment_m", 0.0)),
+            facade_setback_m=float(f.get("setback_m", 0.0)),
+            facade_height_var_m=float(f.get("height_var_m", 0.0)),
+            facade_seed=int(f.get("seed", 1)),
         )
+
+    @property
+    def irregular_facades(self) -> bool:
+        return (self.facade_segment_m > 0.0
+                and (self.facade_setback_m > 0.0 or self.facade_height_var_m > 0.0))
 
     @property
     def half_width(self) -> float:
@@ -126,12 +144,95 @@ def build_xml(spec: SyntheticLSpec) -> str:
     )
 
     parts.append("\n  <!-- Blok gedung -->\n")
-    for name, (xmin, xmax, ymin, ymax) in spec.blocks().items():
-        parts.append(_box(name, mats[spec.building_material],
-                          xmin, xmax, ymin, ymax, 0.0, spec.building_height_m))
+    mat = mats[spec.building_material]
+    if not spec.irregular_facades:
+        for name, (xmin, xmax, ymin, ymax) in spec.blocks().items():
+            parts.append(_box(name, mat, xmin, xmax, ymin, ymax,
+                              0.0, spec.building_height_m))
+    else:
+        for name, box in _irregular_boxes(spec):
+            parts.append(_box(name, mat, *box))
 
     parts.append("</scene>\n")
     return "".join(parts)
+
+
+def _street_sides(spec: SyntheticLSpec) -> dict[str, list[tuple[str, float, float]]]:
+    """Sisi tiap blok yang menghadap jalan.
+
+    Tiap entri ``(axis, edge, inward)``: bidang fasad tegak lurus ``axis`` pada
+    koordinat ``edge``, dan ``inward`` (+1/-1) arah masuk ke dalam blok.
+    """
+    w, e = spec.half_width, spec.extent
+    return {
+        "block_nw": [("y", w, +1.0), ("x", -w, -1.0)],
+        "block_ne": [("y", w, +1.0), ("x", w, +1.0)],
+        "block_sw": [("y", -w, -1.0), ("x", -w, -1.0)],
+        "block_se": [("y", -w, -1.0), ("x", w, +1.0)],
+    }
+
+
+def _segments(rng, lo: float, hi: float, nominal: float) -> list[tuple[float, float]]:
+    """Bagi [lo, hi] menjadi segmen dengan panjang acak di sekitar ``nominal``."""
+    out: list[tuple[float, float]] = []
+    pos = lo
+    while hi - pos > 1e-9:
+        length = nominal * float(rng.uniform(0.6, 1.4))
+        nxt = min(pos + length, hi)
+        if hi - nxt < 0.35 * nominal:      # jangan sisakan potongan kerdil
+            nxt = hi
+        out.append((pos, nxt))
+        pos = nxt
+    return out
+
+
+def _irregular_boxes(spec: SyntheticLSpec):
+    """Kotak-kotak pembentuk blok dengan fasad bersegmen.
+
+    Tiap blok terdiri dari satu inti pejal yang ditarik mundur sejauh
+    ``facade_depth_m`` dari sisi yang menghadap jalan, ditambah deretan kotak
+    fasad di tiap sisi itu. Tiap segmen fasad punya setback dan tinggi sendiri,
+    sehingga dindingnya berundak, bukan satu cermin datar sepanjang blok.
+
+    Kotak fasad sengaja menembus jauh ke dalam inti (``+2 m``) supaya tidak
+    pernah ada celah di antaranya; tumpang tindih tidak jadi masalah bagi ray
+    tracing, sedangkan celah akan membuat sinar masuk ke dalam gedung.
+    """
+    import numpy as np
+
+    rng = np.random.default_rng(spec.facade_seed)
+    depth = spec.facade_depth_m
+    h0, hv = spec.building_height_m, spec.facade_height_var_m
+    sides = _street_sides(spec)
+
+    for name, (xmin, xmax, ymin, ymax) in spec.blocks().items():
+        core = [xmin, xmax, ymin, ymax]
+        for axis, edge, inward in sides[name]:
+            if axis == "x":
+                if inward > 0:
+                    core[0] = max(core[0], edge + depth)
+                else:
+                    core[1] = min(core[1], edge - depth)
+            else:
+                if inward > 0:
+                    core[2] = max(core[2], edge + depth)
+                else:
+                    core[3] = min(core[3], edge - depth)
+        yield f"{name}_core", (core[0], core[1], core[2], core[3], 0.0, h0)
+
+        for axis, edge, inward in sides[name]:
+            lo, hi = (ymin, ymax) if axis == "x" else (xmin, xmax)
+            for i, (a0, a1) in enumerate(_segments(rng, lo, hi, spec.facade_segment_m)):
+                setback = float(rng.uniform(0.0, spec.facade_setback_m))
+                height = max(4.0, h0 + float(rng.uniform(-hv, hv)))
+                near = edge + inward * setback
+                far = edge + inward * (depth + 2.0)
+                b0, b1 = (near, far) if near <= far else (far, near)
+                if axis == "x":
+                    box = (b0, b1, a0, a1, 0.0, height)
+                else:
+                    box = (a0, a1, b0, b1, 0.0, height)
+                yield f"{name}_{'x' if axis == 'x' else 'y'}{i}", box
 
 
 def write_xml(spec: SyntheticLSpec, path: str | Path) -> Path:

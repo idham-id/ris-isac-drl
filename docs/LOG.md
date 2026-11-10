@@ -4,7 +4,127 @@ Entri terbaru di atas. Setiap entri bertanggal dan menyebut fase/gate terkait.
 
 ---
 
+## 2026-11-11 — Fase 1 revisi: `max_depth = 3` tidak konvergen, premis ROI goyah
+
+Entri 2026-11-10 dibatalkan sebagian (lihat catatan di sana). Ringkasnya: angka
+yang dipakai untuk menyimpulkan "RIS memberi +36,2 dB di ROI" diukur pada
+kedalaman pantulan yang terlalu dangkal.
+
+### 1. Uji konvergensi terhadap `max_depth`
+
+Grid uji 396 titik, link langsung BS→ROI, kedua varian fasad:
+
+| depth | rata: nol % / median | berundak: nol % / median |
+|---|---|---|
+| 3 | 0,0% / **-124,5** | 47,2% / **-93,8** |
+| 4 | 0,0% / -93,8 | 14,4% / -90,7 |
+| 5 | 0,0% / -89,3 | 0,0% / -88,4 |
+| 6 | 0,0% / -89,2 | 0,0% / -89,1 |
+| 7 | 0,0% / -89,2 | 0,0% / -90,7 |
+
+Median bergerak **~35 dB** antara depth 3 dan 5. Jadi `max_depth = 3`
+(`configs/base.yaml`, `docs/EXPERIMENT_DESIGN.md` §8) **tidak memadai** untuk
+geometri NLoS ini — jalur yang membawa daya ke ROI justru yang berpantulan 4–6
+kali menyusuri kanyon.
+
+Ini **bukan** soal anggaran sampel: menaikkan `samples_per_src` dari 1e6 ke 3e7
+pada depth 3 tidak menggeser apa pun (tetap 47,2% nol). Knob-nya memang depth.
+
+Catatan kejujuran soal "konvergen": pada scene berundak median bergoyang
+-88,4 / -89,1 / -90,7 dB di depth 5/6/7 — derau Monte Carlo ~2 dB, tidak
+mengunci seketat scene rata (-89,3 / -89,2 / -89,2). "Konvergen" di sini
+berarti ±2 dB, dan itu tidak mengubah kesimpulan cakupan di bawah.
+
+### 2. Mengapa E1 depth-6 penuh dibatalkan
+
+`scripts/run_e1_coverage.py --config configs/e1_depth6.yaml` dijalankan, lalu
+**dihentikan setelah 6,8 jam** (GPU 100%, VRAM 11969/12282 MiB, baru di sekitar
+M=144; ekstrapolasi total ~15 jam).
+
+Alasannya bukan biaya semata, melainkan biaya yang salah sasaran. Hampir seluruh
+waktu terbakar di `g_grid` (M sumber per-elemen × 3.600 titik, baris 143–145),
+padahal Gate 1 mengukur **RIS→ROI LoS = 100%** sehingga link itu didominasi
+sinar langsung. Yang NLoS — dan karenanya butuh depth — hanya link langsung
+BS→ROI, dan itu murah (22,4 s → 17,0 s dari depth 3 ke 6 pada grid 3.600).
+
+Asumsi itu **diuji, bukan dipakai begitu saja**: `p_ris` M=144 pada 128 titik,
+depth 3 vs 6 → median **-0,14 dB**, p95 |Δ| 0,22 dB, maks |Δ| **0,53 dB**.
+Jadi run 15 jam itu akan menghasilkan angka RIS yang sama dalam 0,5 dB.
+
+Diagnostik pengganti: `results/e1/f842993e1f46/depth_diagnostic.py` + `.json`.
+
+### 3. Hasil pada kedalaman sahih
+
+Cakupan (fraksi titik ROI dengan SNR ≥ 0 dB), scene fasad berundak:
+
+| | 20 dBm | 30 dBm | 40 dBm |
+|---|---|---|---|
+| BS langsung, depth 3 (batal) | 0,525 | 0,525 | 0,525 |
+| **BS langsung, depth 6** | **0,994** | **0,999** | **1,000** |
+| RIS M=64 / 144 / 256 | 1,000 | 1,000 | 1,000 |
+
+Penguatan RIS atas link langsung depth-6, M=144:
+
+| | depth 3 (batal) | depth 6 |
+|---|---|---|
+| p10 | -0,4 dB | **-1,4 dB** |
+| median | +36,2 dB | **+7,4 dB** |
+| p90 | — | +17,4 dB |
+| titik langsung > RIS | 11,2% | **14,3%** |
+
+### 4. Konsekuensi — ini masalah premis, bukan masalah angka
+
+ROI tetap NLoS dalam arti penghalangan garis pandang (fraksi LoS 0,0000, Gate 1
+kriteria 2 lolos), tetapi **tidak kekurangan daya**: pemanduan kanyon
+mengantarkan cukup daya tanpa RIS, menutup 99,4% ROI pada 20 dBm.
+
+Gate 1 tidak menangkap ini karena **tidak satu pun kriterianya membandingkan
+jalur RIS terhadap jalur langsung**. Gate lolos sementara premisnya goyah.
+
+Fasad berundak — opsi (b) yang disetujui 2026-11-10 — **tidak menyelesaikannya**:
+pada depth 6 median rata vs berundak adalah -89,2 vs -89,1 dB (p90 -77,3 vs
+-74,8). Jadi jalur langsung yang kuat itu propagasi kanyon multi-pantul yang
+asli, bukan artefak dinding rata. Opsi (b) boleh tetap dipakai, tetapi bukan
+sebagai perbaikan untuk masalah ini.
+
+Risiko untuk MDP (lebih berat daripada yang dicatat 2026-11-10, dan tidak lagi
+terbatas di y ∈ [20, 35]): bila RIS hanya menambah ~7 dB median dan kalah di
+14,3% titik, daya ungkit aksi agen mengecil di seluruh ROI.
+
+### 5. Menunggu keputusan (perubahan parameter/fisika, per `CLAUDE.md`)
+
+* **(A) `max_depth` 3 → 5 atau 6** di `configs/base.yaml` + §8 desain. Ini wajib
+  terlepas dari keputusan lain; depth 3 menghasilkan fisika yang salah. Biaya
+  pada link langsung dapat diabaikan, tetapi pada prakomputasi RIS per-elemen
+  Fase 2 **besar** — perlu diukur ulang, karena estimasi 2,6 jam/scene di entri
+  2026-11-10 butir 6 diukur pada `max_depth=3`. Mitigasi yang mungkin: depth
+  tinggi hanya untuk link langsung yang NLoS, depth rendah untuk link RIS yang
+  LoS — dibenarkan oleh pengukuran di butir 2, tetapi harus ditulis eksplisit di
+  §4.2 agar kode dan paper tetap cocok.
+* **(B) Premis ROI.** Pilihan: terima dan ubah klaim paper menjadi "RIS menambah
+  ~7 dB", atau ubah geometri agar ROI benar-benar terhalang daya (mis. ROI lebih
+  dalam di jalan B, atau kanyon yang tidak lurus) — yang terakhir menyentuh §2.1.
+* **(C)** `ITURadioMaterial` default `scattering_coefficient = 0.0`, sehingga
+  `ray_tracing.diffuse_reflection: true` **tidak berefek** di scene sintetis.
+  Konsisten dengan uji mekanisme 2026-11-10 (mematikan difus tidak mengubah apa
+  pun). Desain §4.2 meminta hamburan difus aktif, jadi kode dan desain saat ini
+  tidak cocok.
+
+Uji unit Fase 2 "h_d di ROI jauh lebih lemah daripada jalur lewat RIS"
+(`docs/TASKS.md` Fase 2) akan gagal pada scene ini; tunda sampai (B) diputuskan.
+
+---
+
 ## 2026-11-10 — Fase 1 selesai, Gate 1 LOLOS (dengan satu temuan terbuka)
+
+> **SEBAGIAN DIBATALKAN 2026-11-11.** Entri ini dijalankan dengan
+> `max_depth = 3`, yang kemudian terbukti belum konvergen untuk geometri NLoS
+> ini. Semua angka kanal **langsung** di bawah (termasuk tabel cakupan "BS
+> langsung" dan seluruh bagian "TEMUAN TERBUKA", khususnya penguatan RIS
+> +36,2 dB) adalah artefak pemotongan kedalaman dan **tidak sahih**. Angka
+> sisi RIS tetap berlaku (terukur tak sensitif terhadap depth, ±0,5 dB).
+> Koreksi dan pengukuran ulang ada di entri 2026-11-11. Entri ini
+> dipertahankan apa adanya sebagai rekam jejak, bukan dihapus.
 
 Hasil di `results/e1/67700d360462/`. Dijalankan dengan
 `python scripts/run_e1_coverage.py --config base`.

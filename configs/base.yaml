@@ -17,6 +17,19 @@ scene:
     building_material: concrete
     ground_material: concrete
     material_thickness_m: 0.3
+    # Fasad bersegmen, untuk memecah keteraturan empat dinding rata sepanjang
+    # 80 m. CATATAN: ini TIDAK menyelesaikan masalah "kanal langsung terlalu
+    # kuat di ROI". Diukur ulang pada max_depth konvergen, median |h_d|^2 rata
+    # vs berundak adalah -89,2 vs -89,1 dB -- jalur kanyon multi-pantul itu
+    # propagasi asli, bukan artefak dinding rata.
+    # Lihat docs/LOG.md 2026-11-11 (Fase 1 revisi) butir 4.
+    # setback_m = 0 dan height_var_m = 0 mengembalikan blok kotak utuh.
+    facade:
+      depth_m: 12.0          # kedalaman strip fasad dari tepi jalan
+      segment_m: 10.0        # panjang nominal tiap segmen (acak 0,6-1,4x)
+      setback_m: 3.0         # setback maksimum tiap segmen
+      height_var_m: 6.0      # variasi tinggi tiap segmen
+      seed: 1
 
   # Koordinat ditetapkan di Fase 1 (meter, sistem koordinat scene).
   bs_position: [-60.0, -5.0, 10.0]   # di jalan A, sisi selatan, z = 10 m
