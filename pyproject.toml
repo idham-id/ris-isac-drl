@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "risisac"
+version = "0.1.0"
+description = "DRL untuk RIS-assisted ISAC pada skenario NLoS site-specific dengan kanal Sionna RT"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = { text = "Apache-2.0" }
+
+# Dependensi runtime environment utama. Versi persis dikunci di
+# envs/requirements-main.txt; di sini hanya batas bawah yang menjaga API.
+# Sionna 0.19.2 (environment validasi E0) sengaja TIDAK dicantumkan di sini
+# karena TensorFlow-nya bentrok dengan stack utama (lihat docs/LOG.md).
+dependencies = [
+    "sionna>=2.2.0",
+    "torch>=2.14.0",
+    "numpy>=2.0",
+    "scipy>=1.15",
+    "h5py>=3.12",
+    "pyyaml>=6.0",
+    "gymnasium>=1.0",
+    "stable-baselines3>=2.9",
+    "sb3-contrib>=2.9",
+    "matplotlib>=3.9",
+    "pandas>=2.2",
+    "pyarrow>=18.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "tensorboard>=2.18"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
