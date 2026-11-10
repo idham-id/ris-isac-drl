@@ -1,0 +1,16 @@
+sionna>=2.2.0
+torch>=2.14.0
+numpy>=2.0
+scipy>=1.15
+h5py>=3.12
+pyyaml>=6.0
+gymnasium>=1.0
+stable-baselines3>=2.9
+sb3-contrib>=2.9
+matplotlib>=3.9
+pandas>=2.2
+pyarrow>=18.0
+
+[dev]
+pytest>=8.0
+tensorboard>=2.18

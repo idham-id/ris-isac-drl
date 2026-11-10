@@ -7,16 +7,34 @@ experiment:
 
 scene:
   id: synthetic_l            # synthetic_l | <nama scene bawaan Sionna> | osm_<nama>
-  # Koordinat ditetapkan di Fase 1 (meter, sistem koordinat scene). null = belum ditentukan.
-  bs_position: null          # [x, y, z], z sekitar 10 m
-  bs_rx_offset: [0.0, 0.0, -0.5]   # panel terima relatif terhadap panel pancar
-  ris_position: null         # [x, y, z], z sekitar 6 m, di dinding sudut
-  ris_normal: null           # vektor normal RIS, menghadap jalan B
-  roi:                       # area NLoS di jalan B
-    polygon: null            # [[x, y], ...]
+
+  # Geometri scene sintetis berbentuk L (desain §2.2 baris "Pengembangan").
+  # Simpang berpusat di origin; jalan A memanjang ke -x, jalan B ke +y.
+  synthetic_l:
+    street_width_m: 20.0
+    block_extent_m: 80.0     # dari tepi jalan sampai tepi scene
+    building_height_m: 20.0
+    building_material: concrete
+    ground_material: concrete
+    material_thickness_m: 0.3
+
+  # Koordinat ditetapkan di Fase 1 (meter, sistem koordinat scene).
+  bs_position: [-60.0, -5.0, 10.0]   # di jalan A, sisi selatan, z = 10 m
+  bs_rx_offset: [0.0, 0.0, -0.5]     # panel terima relatif terhadap panel pancar
+  ris_position: [9.9, 12.0, 6.0]     # dinding barat blok NE, dekat sudut, z = 6 m
+  # Normal RIS membagi dua arah ke BS dan ke pusat ROI (masing-masing ~43,5°
+  # dari normal). Ditetapkan di Fase 1; lihat docs/LOG.md.
+  ris_normal: [-0.868, 0.493, -0.051]
+  roi:                       # area NLoS di jalan B, 10-60 m dari sudut simpang
+    polygon: [[-9.0, 20.0], [9.0, 20.0], [9.0, 70.0], [-9.0, 70.0]]
     height: 1.5              # tinggi pengguna/target (m)
-  target_lanes: null         # daftar polyline lajur
-  sidewalks: null            # daftar poligon trotoar
+    grid_spacing_m: 0.5      # jarak grid peta cakupan E1
+  target_lanes:              # daftar polyline lajur
+    - [[-3.0, 20.0], [-3.0, 70.0]]
+    - [[3.0, 20.0], [3.0, 70.0]]
+  sidewalks:                 # daftar poligon trotoar
+    - [[-9.0, 20.0], [-7.0, 20.0], [-7.0, 70.0], [-9.0, 70.0]]
+    - [[7.0, 20.0], [9.0, 20.0], [9.0, 70.0], [7.0, 70.0]]
 
 radio:
   # Tanda eksponen WAJIB eksplisit (3.5e+9, bukan 3.5e9): PyYAML memakai
@@ -136,6 +154,14 @@ baselines:
   geometric:
     weight_grid: [0.25, 0.5, 0.75]
   rho_grid: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+
+experiments:
+  e1:                        # kelayakan link budget dan peta cakupan (desain §7)
+    m_values: [64, 144, 256]
+    p_max_dbm_values: [20.0, 30.0, 40.0]
+    snr_threshold_db: 0.0    # Gate 1
+    coverage_target: 0.8     # Gate 1: >= 80% titik ROI di atas ambang
+    los_verify_samples: 64   # titik untuk uji silang ray_test vs PathSolver
 
 evaluation:
   num_test_episodes: 200

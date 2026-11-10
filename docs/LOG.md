@@ -4,6 +4,142 @@ Entri terbaru di atas. Setiap entri bertanggal dan menyebut fase/gate terkait.
 
 ---
 
+## 2026-11-10 — Fase 1 selesai, Gate 1 LOLOS (dengan satu temuan terbuka)
+
+Hasil di `results/e1/67700d360462/`. Dijalankan dengan
+`python scripts/run_e1_coverage.py --config base`.
+
+### Koordinat yang ditetapkan (sekarang di `configs/base.yaml`)
+
+Simpang berpusat di origin, jalan selebar 20 m, empat blok gedung setinggi 20 m
+dengan `block_extent_m = 80`. Jalan A memanjang ke -x, jalan B ke +y.
+
+| Entitas | Nilai |
+|---|---|
+| BS (panel pancar) | (-60, -5, 10) |
+| BS (panel terima) | (-60, -5, 9,5) |
+| RIS | (9,9, 12, 6) — dinding barat blok NE, dekat sudut |
+| Normal RIS | (-0,868, 0,493, -0,051) |
+| ROI | x ∈ [-9, 9], y ∈ [20, 70], z = 1,5 — yaitu 10–60 m dari sudut simpang |
+| Grid ROI | 0,5 m → 3.600 titik |
+
+Normal RIS dipilih sebagai pembagi dua antara arah ke BS (azimut 193,7°) dan ke
+pusat ROI (106,7°), sehingga keduanya berada 43,5° dari normal. Alternatif
+dinding rata (normal 180°) membuat pusat ROI 73° dari normal, jauh lebih buruk.
+
+### Hasil Gate 1
+
+| Kriteria | Hasil |
+|---|---|
+| BS→RIS LoS | PASS (True) |
+| BS→ROI NLoS di 100% titik | PASS (fraksi LoS = 0,0000) |
+| M=144, P=30 dBm: SNR lewat RIS ≥ 0 dB di ≥80% titik | PASS (**100,0%**) |
+| Oracle LoS setara `PathSolver(max_depth=0)` | PASS (0/64 ketidakcocokan) |
+
+Cakupan (fraksi titik ROI dengan SNR ≥ 0 dB):
+
+| | 20 dBm | 30 dBm | 40 dBm |
+|---|---|---|---|
+| BS langsung | 0,477 | 0,481 | 0,998 |
+| RIS M=64 | 1,000 | 1,000 | 1,000 |
+| RIS M=144 | 1,000 | 1,000 | 1,000 |
+| RIS M=256 | 1,000 | 1,000 | 1,000 |
+
+Waktu: BS→grid 43 s; RIS M=64/144/256 masing-masing 69 / 157 / 309 s.
+
+### Verifikasi, bukan sekadar lolos gate
+
+Cakupan 100% di semua konfigurasi perlu dibuktikan bukan bug. Link budget
+analitik model kaskade memberi |h|² = -89,5 dB untuk M=64; ray tracing memberi
+median -90,1 dB. Selisih 0,6 dB, jadi model dan simulasi sepakat.
+
+Penskalaan terhadap M lebih rendah dari ideal, dan itu memang yang diharapkan:
+
+| | Harapan (daya ∝ M²) | Terukur | Selisih |
+|---|---|---|---|
+| M 64→144 | +7,04 dB | +5,77 dB | -1,28 dB |
+| M 144→256 | +5,00 dB | +3,87 dB | -1,13 dB |
+
+Panel M=256 berukuran 0,69 m sehingga jarak Fraunhofer-nya 21,9 m, sedangkan
+ROI mulai ~10 m dari RIS. Sebagian ROI berada di medan dekat, persis alasan
+desain §4.2 menuntut array per-elemen. Kekurangan ~1,2 dB ini adalah tanda model
+per-elemen bekerja, bukan galat.
+
+### TEMUAN TERBUKA — jalur langsung terlalu kuat di ROI dekat
+
+Gate 1 lolos, tetapi kriterianya tidak memeriksa hal ini. Perbandingan
+per-titik antara jalur lewat RIS (M=144) dan jalur langsung:
+
+| Persentil penguatan RIS atas langsung | dB |
+|---|---|
+| p0 | -12,1 |
+| p10 | -0,4 |
+| p25 | +3,7 |
+| p50 | +36,2 |
+| p100 | +49,9 |
+
+**Di 11,2% titik ROI jalur langsung lebih kuat daripada jalur lewat RIS**, dan
+di 47,7% titik penguatannya di bawah 20 dB. Titik-titik itu terkonsentrasi di
+y ∈ [20, 35], yaitu sepertiga ROI yang dekat sudut.
+
+Mekanismenya diuji, bukan ditebak. Mematikan difraksi tidak mengubah apa pun;
+mematikan pantulan spekular menjatuhkan ROI dekat sebesar 45,8 dB. Geometri
+jalur terkuat (dari `paths.vertices`):
+
+```
+jalur #1: (-43,10, +10,00, 8,20)  dinding selatan blok NW
+          (-20,56, -10,00, 5,81)  dinding utara blok SW
+          (+10,00, +17,12, 2,56)  dinding barat blok NE  -> ROI
+```
+
+Jadi: **pemanduan gelombang tiga pantulan** menyusuri kanyon jalan A lalu
+membelok di sudut. Scene sintetis punya empat dinding beton raksasa yang
+sempurna rata dan sejajar, sehingga menjadi pemandu gelombang yang jauh lebih
+efisien daripada fasad kota sungguhan.
+
+Dampaknya ada dua:
+
+1. Uji unit Fase 2 "h_d di ROI jauh lebih lemah daripada jalur lewat RIS dengan
+   profil fokus" (docs/TASKS.md Fase 2) **akan gagal** di scene ini.
+2. Lebih penting: bila jalur langsung sebanding dengan jalur RIS di sepertiga
+   dekat ROI, kendali fasa RIS kehilangan daya ungkit di sana, dan aksi agen
+   menjadi kurang berpengaruh. Ini melemahkan MDP, bukan sekadar merusak satu tes.
+
+**Menunggu keputusan.** Opsi yang diusulkan:
+
+* (a) Terima untuk scene pengembangan saja, catat keterbatasannya, lalu periksa
+  ulang di scene kota utama pada Fase 2 — fasad kota nyata tidak serata ini.
+* (b) Rusak keteraturan fasad scene sintetis (undakan/setback atau tinggi gedung
+  bervariasi) supaya kanyonnya tidak jadi pemandu gelombang ideal.
+* (c) Geser ROI menjauh dari sudut — tetapi ini melanggar §2.1 yang menetapkan
+  ROI pada 10–60 m dari sudut.
+
+Rekomendasi: (a) + (b). Keduanya mempertahankan definisi ROI di §2.1.
+
+### Catatan lain
+
+* `sionna.rt` hanya mendaftarkan pola `iso`, `dipole`, `hw_dipole`, `tr38901` —
+  tidak ada `cosine` yang diminta config. Didaftarkan sendiri di
+  `src/risisac/channels/patterns.py` sebagai G(θ) = 4 cos θ pada setengah bola,
+  sesuai §4.2 ("pola elemen kosinus atau pola bawaan yang mendekati"). Perhatikan
+  konvensi sudut Sionna: boresight +x lokal, jadi kosinus terhadap normal adalah
+  `sin(theta) cos(phi)`, bukan `cos(theta)`.
+* Nama objek di `paths.objects` TIDAK selaras dengan urutan `scene.objects.keys()`.
+  Gunakan `paths.vertices` (koordinat) untuk mengenali permukaan, jangan namanya.
+* Visibilitas LoS memakai `mitsuba.ray_test`, bukan `PathSolver(max_depth=0)`:
+  deterministik dan ribuan kali lebih murah untuk grid 3.600 titik. Kesetaraannya
+  diuji di `tests/test_scene.py`, pada campuran titik LoS dan NLoS.
+* Konvensi fasa kanal Sionna (`PHASE_SIGN = -1`, yaitu exp(-jkr)) **diukur**
+  terhadap ray tracing di `tests/test_geometry.py`, tidak diasumsikan. Posisi dan
+  urutan elemen (`m = j * num_rows + i`) juga diuji terhadap
+  `PlanarArray.rotate` Sionna.
+* Validator palet dari skill dataviz tidak bisa dijalankan (Node.js tidak
+  terpasang di mesin ini). F1 memakai palet Okabe-Ito yang validasi buta warnanya
+  sudah dipublikasikan; F2 memakai skala diverging dengan titik tengah tepat di
+  ambang 0 dB sehingga batas Gate 1 terbaca langsung.
+
+---
+
 ## 2026-11-10 — Fase 0 selesai, Gate 0 LOLOS
 
 ### Perangkat keras
