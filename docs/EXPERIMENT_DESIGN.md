@@ -184,7 +184,11 @@ RIS dimodelkan sebagai **perangkat radio dengan array planar M elemen** (jarak �
 | **h**^{(r)}_{d,t} | Titik lintasan target | BS-rx (N_r) | Per titik |
 | **H**_c | BS-tx (N_t) | BS-rx (N_r) | Sekali; buang jalur LoS |
 
-Pengaturan ray tracing awal: kedalaman pantulan maks 3, pantulan spekular + difus, difraksi aktif (v1.2+), jumlah sampel per sumber disesuaikan sampai hasil stabil. **Array per-elemen** (bukan synthetic array) untuk RIS karena pengguna dan target bisa berada di dekat jarak Fraunhofer RIS; uji perbedaannya di E0.
+Pengaturan ray tracing: **kedalaman pantulan maks 5**, pantulan spekular + difus, difraksi aktif (v1.2+), jumlah sampel per sumber disesuaikan sampai hasil stabil. **Array per-elemen** (bukan synthetic array) untuk RIS karena pengguna dan target bisa berada di dekat jarak Fraunhofer RIS; uji perbedaannya di E0.
+
+Kedalaman 5 **diukur, bukan dipilih** (Fase 1 revisi, `docs/LOG.md` 2026-11-11). Pada kedalaman 3 yang dipakai semula, median |h_d|² di ROI meleset ~35 dB karena jalur pembawa daya di kanyon NLoS justru berpantulan 4–6 kali; nilainya baru stabil pada 5–6 (sisa fluktuasi ±2 dB akibat derau Monte Carlo). Menaikkan `samples_per_src` dari 1e6 ke 3e7 tidak memperbaikinya — kedalaman, bukan anggaran sampel, yang membatasi.
+
+Hamburan difus memerlukan `scattering_coefficient > 0` pada material: `ITURadioMaterial` di Sionna 2.2 memakai default **0,0**, sehingga mengaktifkan hamburan difus di solver saja tidak berefek apa pun. Nilai yang dipakai adalah **S = 0,3** untuk beton, di tengah rentang terukur 0,2–0,6 untuk dinding gedung pada model *effective roughness* (Degli-Esposti dkk., IEEE TAP 2007 — model yang sama yang diimplementasikan Sionna), dengan pola hamburan Lambertian.
 
 Dengan array per-elemen, jumlah sumber ray tracing sama dengan M, sehingga **jumlah jalur maksimum per sumber** (`max_num_paths_per_src`) menjadi parameter yang membatasi memori, bukan hanya jumlah sampel. Nilainya harus dilaporkan bersama `samples_per_src` karena menurunkannya memotong jalur dan membiaskan koefisien kanal. Nilai dikunci lewat uji konvergensi di Fase 2: naikkan sampai daya terima total berubah < 0,1 dB. Nama API (misalnya `load_scene`, `PlanarArray`, `Transmitter`, `Receiver`, `PathSolver`) harus diverifikasi di dokumentasi versi terpasang.
 
@@ -379,7 +383,8 @@ Library: Stable-Baselines3 + sb3-contrib. Tuning ringan hanya di set validasi, l
 | λ | 1,0 | |
 | ε (NMSE ĥ_e) | −20 dB | |
 | σ_u, σ_ref, σ_max | 0,5 m, 0,5 m, 5 m | |
-| Ray tracing | max_depth 3, spekular + difus + difraksi | Sampel disesuaikan sampai stabil |
+| Ray tracing | max_depth 5, spekular + difus + difraksi | Kedalaman diukur di Fase 1 revisi; depth 3 meleset ~35 dB |
+| `scattering_coefficient` (beton) | 0,3 | Lambertian; default Sionna 0,0 membuat hamburan difus tidak berefek |
 | `max_num_paths_per_src` | 1e5 (M ≤ 144), 5e4 (M = 256) | Batas memori array per-elemen; dikunci lewat uji konvergensi §4.2 |
 | Lintasan | 400 train / 50 val / 100 test | Per scene |
 

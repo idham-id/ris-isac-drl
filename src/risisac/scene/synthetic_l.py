@@ -45,6 +45,12 @@ class SyntheticLSpec:
     building_material: str
     ground_material: str
     material_thickness_m: float
+    # Koefisien hamburan efektif S (model effective roughness, Degli-Esposti
+    # dkk. IEEE TAP 2007). ITURadioMaterial Sionna 2.2 memakai default 0,0,
+    # sehingga ray_tracing.diffuse_reflection TIDAK berefek tanpa nilai ini.
+    # Pola hamburan dibiarkan default (Lambertian) -- menuliskannya ke XML
+    # error karena tiap properti sisa diteruskan sebagai kwarg ke factory pola.
+    scattering_coefficient: float = 0.0
     # Keteraturan fasad. Dengan setback dan variasi tinggi = 0, tiap blok
     # kembali menjadi satu kotak utuh (scene Fase 1 versi pertama).
     facade_depth_m: float = 0.0
@@ -64,6 +70,7 @@ class SyntheticLSpec:
             building_material=str(s["building_material"]),
             ground_material=str(s["ground_material"]),
             material_thickness_m=float(s["material_thickness_m"]),
+            scattering_coefficient=float(s.get("scattering_coefficient", 0.0)),
             facade_depth_m=float(f.get("depth_m", 0.0)),
             facade_segment_m=float(f.get("segment_m", 0.0)),
             facade_setback_m=float(f.get("setback_m", 0.0)),
@@ -97,11 +104,18 @@ class SyntheticLSpec:
         }
 
 
-def _bsdf(material_id: str, itu_type: str, thickness: float) -> str:
+def _bsdf(material_id: str, itu_type: str, thickness: float,
+          scattering_coefficient: float = 0.0) -> str:
+    """BSDF ITU. ``scattering_coefficient`` dihilangkan bila 0 agar XML scene
+    lama tetap sama persis (default Sionna juga 0,0)."""
+    s = ""
+    if scattering_coefficient > 0.0:
+        s = f'    <float name="scattering_coefficient" value="{scattering_coefficient}"/>\n'
     return (
         f'  <bsdf type="itu-radio-material" id="{material_id}">\n'
         f'    <string name="type" value="{itu_type}"/>\n'
         f'    <float name="thickness" value="{thickness}"/>\n'
+        f"{s}"
         f"  </bsdf>\n"
     )
 
@@ -130,7 +144,8 @@ def build_xml(spec: SyntheticLSpec) -> str:
 
     parts = ['<scene version="2.1.0">\n\n  <!-- Material -->\n']
     for itu_type, mat_id in mats.items():
-        parts.append(_bsdf(mat_id, itu_type, spec.material_thickness_m))
+        parts.append(_bsdf(mat_id, itu_type, spec.material_thickness_m,
+                           spec.scattering_coefficient))
 
     parts.append("\n  <!-- Tanah -->\n")
     e = spec.extent

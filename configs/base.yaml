@@ -17,6 +17,16 @@ scene:
     building_material: concrete
     ground_material: concrete
     material_thickness_m: 0.3
+    # ITURadioMaterial Sionna 2.2 memakai default scattering_coefficient = 0,0,
+    # sehingga ray_tracing.diffuse_reflection: true TIDAK berefek apa pun tanpa
+    # nilai eksplisit di sini. S = 0,3 untuk beton berada di tengah rentang
+    # terukur 0,2-0,6 untuk dinding gedung pada model effective roughness
+    # (Degli-Esposti dkk., IEEE TAP 2007 -- model yang diimplementasikan Sionna).
+    # Pola hamburan dibiarkan default Sionna (Lambertian): menulis
+    # scattering_pattern di XML justru error, karena RadioMaterial meneruskan
+    # tiap properti sisa sebagai kwarg ke factory pola (radio_material.py:164).
+    # Lihat docs/EXPERIMENT_DESIGN.md §4.2 dan docs/LOG.md 2026-11-11.
+    scattering_coefficient: 0.3
     # Fasad bersegmen, untuk memecah keteraturan empat dinding rata sepanjang
     # 80 m. CATATAN: ini TIDAK menyelesaikan masalah "kanal langsung terlalu
     # kuat di ROI". Diukur ulang pada max_depth konvergen, median |h_d|^2 rata
@@ -76,7 +86,12 @@ radio:
     rcs_m2: 1.0
 
 ray_tracing:
-  max_depth: 3
+  # Kedalaman DIUKUR, bukan dipilih (docs/LOG.md 2026-11-11, Fase 1 revisi).
+  # Pada depth 3 median |h_d|^2 di ROI meleset ~35 dB: jalur pembawa daya di
+  # kanyon NLoS justru berpantul 4-6 kali. Stabil pada 5-6 (sisa +-2 dB derau
+  # Monte Carlo). Menaikkan samples_per_src 1e6 -> 3e7 TIDAK memperbaikinya;
+  # kedalaman, bukan anggaran sampel, yang membatasi.
+  max_depth: 5
   specular_reflection: true
   diffuse_reflection: true
   diffraction: true

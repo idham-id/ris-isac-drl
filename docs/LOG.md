@@ -4,6 +4,118 @@ Entri terbaru di atas. Setiap entri bertanggal dan menyebut fase/gate terkait.
 
 ---
 
+## 2026-11-11 (b) — Hamburan difus ternyata mati; premis ROI sebagian besar pulih
+
+Lanjutan entri 2026-11-11 (a). Tiga keputusan disetujui: (A) `max_depth` 5,
+(B) rancang ulang geometri ROI, (C) aktifkan hamburan difus sesuai §4.2.
+
+### 1. "ROI di balik tikungan kedua" TIDAK bisa dibangun — diukur
+
+Satu RIS harus melihat BS **dan** ROI. Diuji pada scene sekarang: RIS di sudut
+pertama (9,9; 12; 6) terhadap 11 titik di lengan jalan kedua (x, 60) →
+**LoS 0/11**. Dinaikkan ke z = 25 m (di atas atap) → tetap **0/11**, karena
+blok NE menghalangi sampai x = 90.
+
+Jadi opsi (B) sebagaimana dirumuskan mustahil tanpa RIS kedua atau memindahkan
+RIS ke sudut kedua (yang mematikan LoS ke BS). Tidak dilaksanakan.
+
+### 2. Penyebab utama bukan geometri, melainkan hamburan difus yang mati
+
+`ITURadioMaterial` memakai default `scattering_coefficient = 0,0`, sehingga
+`ray_tracing.diffuse_reflection: true` **tidak berefek apa pun** — ini juga
+menjelaskan mengapa uji mekanisme 2026-11-10 ("mematikan difus tidak mengubah
+apa pun") memberi hasil nol.
+
+Mengaktifkan S = 0,3 (W=20, y0=35, depth 5, M=144):
+
+| | h_d median | RIS median | penguatan median | langsung > RIS |
+|---|---|---|---|---|
+| S = 0,0 | -98,6 | -85,1 | +11,9 dB | 2,1% |
+| **S = 0,3** | **-109,3** | -86,7 | **+22,5 dB** | **0,0%** |
+
+Jalur langsung (±5 pantulan) kehilangan **10,7 dB**, jalur RIS (pada dasarnya
+LoS) hanya 1,6 dB. Perkiraan kasar (1 - S²) per pantulan ≈ 2 dB jauh meleset;
+ruginya berlipat sekaligus menghilangkan daya dari rantai spekular.
+
+Tinggi BS **bukan** tuas: 18 m memberi +19,4 dB, lebih buruk dari 10 m.
+
+### 3. Jarak ROI dari sudut — yang bergerak hanya ekornya
+
+S = 0,3, depth 5, lebar jalan 20 m, panjang ROI 50 m:
+
+| y0 | jarak dari sudut | penguatan p10 | penguatan median | langsung > RIS |
+|---|---|---|---|---|
+| 20 (§2.1 sekarang) | 10-60 m | -1,4 dB | +22,5 dB | 13,6% |
+| 25 | 15-65 m | +6,7 dB | +22,2 dB | 5,7% |
+| **30** | **20-70 m** | +5,5 dB | +22,4 dB | **0,7%** |
+| 35 | 25-75 m | +6,3 dB | +22,6 dB | 0,0% |
+
+Median praktis datar; yang membaik adalah ekor dekat sudut. y0 = 30 sudah
+menurunkan "langsung > RIS" dari 13,6% ke 0,7% dengan perubahan §2.1 jauh
+lebih kecil daripada rancang ulang topologi.
+
+**Belum diterapkan** — `scene.roi.polygon` dan §2.1 masih y0 = 20.
+
+### 4. `max_num_paths_per_src = 1e5` memotong jalur begitu hamburan aktif
+
+Link langsung saja (8 sumber BS), y0 = 30, S = 0,3:
+
+| depth | samples | max_paths | median h_d |
+|---|---|---|---|
+| 5 | 1e6 | 1e5 | -108,8 |
+| 5 | **1e7** | **1e5** | **-137,1** |
+| 5 | 1e7 | 1e6 | -106,7 |
+| 6 | 1e7 | 1e6 | -108,1 |
+| 7 | 1e7 | 1e6 | -108,7 |
+
+Menaikkan sampel 1e6 → 1e7 sambil menahan tutup di 1e5 **menjatuhkan hasil
+28 dB**. Itu pemotongan jalur, bukan fisika: makin banyak sampel menemukan
+makin banyak jalur difus, lalu tutup membuang sebagian termasuk yang kuat.
+
+Dua akibat:
+
+* Penurunan monoton h_d terhadap kedalaman (-107,5 → -110,3 dari depth 5 ke 6)
+  yang sempat dicurigai sebagai pembatalan koheren **adalah artefak tutup ini**.
+  Dengan anggaran memadai (1e6) depth 5/6/7 = -106,7 / -108,1 / -108,7, yaitu
+  konvergen dalam 2 dB. **`max_depth: 5` dikonfirmasi.**
+* Butir 3 entri 2026-11-10 ("menurunkan `max_num_paths_per_src` memotong jalur —
+  risiko bias diam") kini **terbukti**, bukan lagi dugaan. Nilai 1e5 dipilih
+  karena batas VRAM, bukan konvergensi.
+
+Peringanan: pada `samples_per_src = 1e6` yang memang dikonfigurasi, tutup 1e5
+hanya meleset ~2 dB (-108,8 vs -106,7), jadi angka penguatan +22 dB di butir 2
+dan 3 tetap berlaku.
+
+### 5. TERBUKA — apakah link RIS ikut terbias?
+
+Link RIS memakai M sumber per-elemen, dan justru di situ 1e5 dipilih karena
+VRAM. Uji M=144 dengan hamburan aktif **belum selesai**: proses dihentikan
+sistem karena memori menipis setelah satu baris (depth 3, 1e5 → median
+-85,6 dB). Pembanding 2e5 dan 5e5 belum ada.
+
+Ini harus dituntaskan sebelum Fase 2, karena bila link RIS ikut terpotong maka
+seluruh basis data kanal Fase 2 terbias, dan tutup tidak bisa dinaikkan tanpa
+menabrak batas 12 GB.
+
+### 6. Yang sudah diterapkan di repo
+
+* `configs/base.yaml`: `max_depth: 3 → 5`; `scene.synthetic_l.scattering_coefficient: 0.3`.
+* `src/risisac/scene/synthetic_l.py`: `SyntheticLSpec.scattering_coefficient`,
+  diteruskan ke BSDF. Pola hamburan **tidak** ditulis ke XML — `RadioMaterial`
+  meneruskan tiap properti sisa sebagai kwarg ke factory pola, sehingga
+  `scattering_pattern` melempar `LambertianPattern() takes no arguments`
+  (`radio_material.py:164`). Lambertian memang default.
+* `docs/EXPERIMENT_DESIGN.md` §4.2 dan tabel §8 diperbarui bersamaan.
+* `tests/test_scene.py`: tes blok diperbaiki (fasad berundak memecah blok
+  menjadi inti + segmen, jadi yang diuji awalan nama), plus tes baru bahwa
+  `scattering_coefficient` benar-benar sampai ke XML dan `scattering_pattern`
+  tidak. 9/9 lolos.
+
+**E1 belum dijalankan ulang** dengan setelan baru; angka Gate 1 yang berlaku
+masih dari konfigurasi lama.
+
+---
+
 ## 2026-11-11 — Fase 1 revisi: `max_depth = 3` tidak konvergen, premis ROI goyah
 
 Entri 2026-11-10 dibatalkan sebagian (lihat catatan di sana). Ringkasnya: angka

@@ -36,10 +36,32 @@ def scene(cfg, spec):
 
 
 def test_xml_has_four_blocks_and_ground(spec):
+    """Tiap blok harus terwakili di XML.
+
+    Dengan fasad bersegmen satu blok dipecah menjadi inti + deretan kotak fasad
+    (``block_nw_core``, ``block_nw_fac_0``, ...), jadi yang diuji adalah awalan
+    nama, bukan id blok utuh.
+    """
     xml = build_xml(spec)
-    for name in ("block_nw", "block_ne", "block_sw", "block_se", "ground"):
-        assert f'id="mesh-{name}"' in xml
+    assert 'id="mesh-ground"' in xml
+    for name in ("block_nw", "block_ne", "block_sw", "block_se"):
+        assert f'id="mesh-{name}' in xml, f"blok {name} tidak ada di XML"
     assert xml.count("itu-radio-material") >= 1
+
+
+def test_scattering_coefficient_emitted_only_when_nonzero(spec):
+    """Default Sionna 0,0 membuat hamburan difus tidak berefek, jadi nilainya
+    harus benar-benar sampai ke XML (docs/LOG.md 2026-11-11)."""
+    import dataclasses
+
+    on = dataclasses.replace(spec, scattering_coefficient=0.3)
+    off = dataclasses.replace(spec, scattering_coefficient=0.0)
+    assert 'name="scattering_coefficient" value="0.3"' in build_xml(on)
+    assert "scattering_coefficient" not in build_xml(off)
+    # Pola hamburan tidak boleh ditulis ke XML: RadioMaterial meneruskan tiap
+    # properti sisa sebagai kwarg ke factory pola, dan LambertianPattern()
+    # tidak menerima argumen.
+    assert "scattering_pattern" not in build_xml(on)
 
 
 def test_scene_loads_with_expected_objects(scene):
