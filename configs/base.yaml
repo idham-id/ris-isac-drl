@@ -1,0 +1,139 @@
+# Konfigurasi bawaan. Nilai mengikuti docs/EXPERIMENT_DESIGN.md §8.
+# Override eksperimen: buat file kecil berisi `defaults: [base]` lalu ubah kunci yang perlu.
+
+experiment:
+  name: base
+  seed: 0
+
+scene:
+  id: synthetic_l            # synthetic_l | <nama scene bawaan Sionna> | osm_<nama>
+  # Koordinat ditetapkan di Fase 1 (meter, sistem koordinat scene). null = belum ditentukan.
+  bs_position: null          # [x, y, z], z sekitar 10 m
+  bs_rx_offset: [0.0, 0.0, -0.5]   # panel terima relatif terhadap panel pancar
+  ris_position: null         # [x, y, z], z sekitar 6 m, di dinding sudut
+  ris_normal: null           # vektor normal RIS, menghadap jalan B
+  roi:                       # area NLoS di jalan B
+    polygon: null            # [[x, y], ...]
+    height: 1.5              # tinggi pengguna/target (m)
+  target_lanes: null         # daftar polyline lajur
+  sidewalks: null            # daftar poligon trotoar
+
+radio:
+  carrier_frequency_hz: 3.5e9
+  bandwidth_hz: 20.0e6
+  noise_figure_db: 7.0
+  p_max_dbm: 30.0
+  bs:
+    num_tx: 8                # ULA horizontal, jarak lambda/2
+    num_rx: 8
+    pattern: tr38901         # verifikasi nama pola di versi Sionna terpasang
+  ris:
+    num_rows: 12             # M = num_rows * num_cols
+    num_cols: 12
+    spacing_wavelengths: 0.5
+    element_pattern: cosine  # pendekatan pola reradiasi; ablasi: iso
+    phase_bits: null         # null = kontinu; 1 atau 2 untuk RIS diskret
+    calibration_db: 0.0      # diisi dari hasil E0
+  user:
+    num_users: 2             # K
+    pattern: iso
+  target:
+    num_targets: 1           # Q
+    rcs_m2: 1.0
+
+ray_tracing:
+  max_depth: 3
+  specular_reflection: true
+  diffuse_reflection: true
+  diffraction: true
+  samples_per_src: 1.0e6     # sesuaikan sampai hasil stabil (Fase 2)
+  ris_per_element: true      # false = synthetic array (bandingkan di E0)
+  rx_batch_size: 512
+  clutter_via_ris: false     # opsi fase 2 (desain §3.5)
+
+sensing:
+  scnr_threshold_db: 13.0    # Gamma
+  integration_samples: 256   # L
+  clutter_residual: 0.01     # xi
+  sensing_interferes_users: true   # beta_s = 1
+
+mobility:
+  dt_s: 0.1
+  episode_steps: 50          # T
+  target_speed_mps: [1.0, 10.0]
+  user_speed_mps: [0.0, 1.5]
+  num_trajectories:
+    train: 400
+    val: 50
+    test: 100
+  split_seeds:
+    train: 1000
+    val: 2000
+    test: 3000
+
+observation:
+  mode: partial              # partial | full
+  eff_channel_nmse_db: -20.0 # epsilon
+  sinr_report_quant_db: 1.0
+  sinr_report_clip_db: [-10.0, 40.0]
+  user_pos_std_m: 0.5        # sigma_u
+  target_pos_ref_std_m: 0.5  # sigma_ref
+  target_pos_max_std_m: 5.0  # sigma_max
+  scnr_clip_db: [-20.0, 40.0]
+  frame_stack: 4
+
+action:
+  mode: model_informed       # model_informed | direct_w
+  phase_update: incremental  # incremental | absolute
+  phase_step_kappa: 0.1      # kappa
+  rzf_regularization: auto   # K * sigma_n^2 / P_max
+  init_phase: random         # random | geometric
+
+reward:
+  mode: hinge                # hinge | indicator | lagrangian
+  lambda: 1.0
+  hinge_scale_db: 10.0
+  lagrangian_lr: 0.01        # eta, hanya untuk mode lagrangian
+
+training:
+  gamma: 0.95
+  total_timesteps: 2.0e6
+  n_envs: 16
+  ppo:
+    learning_rate: 3.0e-4
+    n_steps: 512
+    batch_size: 256
+    n_epochs: 10
+    gae_lambda: 0.95
+    clip_range: 0.2
+    ent_coef: 0.0
+    net_arch: [256, 256]
+  recurrent_ppo:
+    lstm_hidden_size: 128
+  sac:
+    learning_rate: 3.0e-4
+    buffer_size: 1000000
+    batch_size: 256
+    total_timesteps: 1.0e6
+  eval_every_steps: 50000
+  num_seeds: 5
+
+baselines:
+  oracle_gd:
+    iterations: 300
+    restarts: 4
+    learning_rate: 0.05
+    softmin_temperature: 0.1
+  stale_period_steps: [5, 10]
+  geometric:
+    weight_grid: [0.25, 0.5, 0.75]
+  rho_grid: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
+
+evaluation:
+  num_test_episodes: 200
+  confidence_level: 0.95
+  bootstrap_samples: 10000
+
+paths:
+  channel_db: data/channels
+  results: results
