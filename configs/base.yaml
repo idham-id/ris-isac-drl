@@ -13,7 +13,20 @@ experiment:
 scene:
   id: synthetic_l            # synthetic_l | free_space (E0) | <scene kota bawaan, opsional E8>
   synthetic_l:
-    street_width_m: 10.0    # dipilih di Fase 1; lihat scripts/place_geometry.py
+    # Lebar jalan adalah tuas utama premis NLoS, dan §2.2 tidak menetapkannya.
+    # Gelombang langsung mencapai ROI sebagai gelombang TERPANDU: jumlah
+    # pantulan dinding yang dibutuhkannya ~ jarak/lebar, sedangkan hop
+    # RIS->ROI tetap LoS dan tidak terpengaruh lebar. Mempersempit jalan
+    # karena itu melemahkan jalur langsung TANPA melemahkan jalur RIS.
+    # Terukur (penguatan RIS median / fraksi titik >= 6 dB, d(BS-RIS) ~ 20 m,
+    # grid 0,5 m, ROI termasuk trotoar):
+    #   10 m: +0,8 dB / 0,02    9 m: +3,4 dB / 0,16    8 m: +5,8 dB / 0,46
+    #    7 m: +8,2 dB / 0,78    6 m: +11,9 dB / 0,93
+    # Kaskade RIS hampir tidak bergerak (-76,9 .. -75,4 dB); yang berubah 17 dB
+    # hanya jalur langsung -- bukti mekanismenya gelombang terpandu.
+    # Penampang 6 m: trotoar 2 x 1,0 m + lajur 2 x 2,0 m -- jalan kota tua
+    # yang padat, yaitu justru tempat RIS masuk akal dipasang.
+    street_width_m: 6.0     # dipilih di Fase 1; lihat scripts/place_geometry.py
     block_extent_m: 80.0     # dari tepi jalan sampai tepi scene
     building_height_m: 20.0
     building_material: concrete
@@ -27,28 +40,33 @@ scene:
     # (Degli-Esposti dkk., IEEE TAP 2007, model yang diimplementasikan Sionna).
     # Pola hamburan dibiarkan default Sionna (Lambertian).
     scattering_coefficient: 0.3
-  # Koordinat ditetapkan di Fase 1 dengan scripts/place_geometry.py, yang
-  # mencari d(BS-RIS) terkecil yang masih memberi 0% LoS BS->ROI. Lebar jalan
-  # ikut dicari: bayangan sudut gedung menuntut u >= 2a/(s-1), sehingga jalan
-  # 20 m memaksa d(BS-RIS) = 50,6 m sedangkan jalan 10 m cukup ~20 m -- yaitu
-  # yang diminta §2.1. Penempatan akhir TIDAK meminimalkan d(BS-RIS) melainkan
-  # memaksimalkan penguatan RIS atas jalur langsung: sapuan menunjukkan jalan
-  # lebih lebar (BS lebih jauh) JUSTRU memperburuk premis, karena kanyon lebar
-  # butuh lebih sedikit pantulan sementara kaskade RIS kehilangan hop BS-RIS
-  # yang memanjang. Lihat docs/LOG.md 2026-11-11 (Fase 1 v0.2).
-  bs_position: [-13.0, -3.0, 10.0]   # jalan A, d(BS-RIS) = 20,4 m
+  # Koordinat ditetapkan di Fase 1 dengan scripts/place_geometry.py. Objektif
+  # pencarian adalah MEMAKSIMALKAN penguatan RIS atas sistem tanpa RIS dengan
+  # kendala Gate 1 lainnya -- bukan meminimalkan d(BS-RIS). Dua tuasnya:
+  # mempersempit jalan (lihat synthetic_l.street_width_m) dan memundurkan BS
+  # di jalan A, yang memaksa gelombang langsung membelok lebih tajam. Pada
+  # lebar 6 m, d(BS-RIS) = 20,0 m sudah memberi penguatan +11,9 dB median,
+  # jadi tidak perlu melanggar "BS-RIS ~ 20 m" di §2.1.
+  # Catatan: pencarian memakai grid ROI yang SAMA dengan gate-nya (0,5 m);
+  # pada grid 1,0 m pernah tersisa satu titik ber-LoS yang tidak terlihat.
+  bs_position: [-16.0, -1.0, 10.0]   # jalan A, d(BS-RIS) = 20,0 m
   bs_rx_offset: [0.0, 0.0, -0.5]
-  ris_position: [4.9, 6.0, 6.0]      # dinding barat blok NE, serapat mungkin ke sudut
-  # Normal = pembagi dua arah ke BS dan ke pusat ROI; keduanya 52,4 deg dari normal.
-  ris_normal: [-0.909, 0.417, -0.015]
+  ris_position: [2.9, 4.0, 6.0]      # dinding barat blok NE, serapat mungkin ke sudut
+  # Normal = pembagi dua arah ke BS dan ke pusat ROI; keduanya 49,4 deg dari normal.
+  ris_normal: [-0.835, 0.550, -0.013]
   roi:
     distance_from_ris_m: [10.0, 30.0]   # diukur sepanjang jalan B dari RIS
-    polygon: [[-4.0, 16.0], [4.0, 16.0], [4.0, 36.0], [-4.0, 36.0]]
+    # ROI melebar sampai 0,25 m dari tiap dinding, BUKAN 1 m: §2.1 menempatkan
+    # pengguna di TROTOAR, jadi ROI yang berhenti di tepi lajur akan
+    # meninggalkan pengguna di luar basis data kanal. Titik terdekat ke dinding
+    # juga titik dengan penguatan RIS terkecil, jadi memasukkannya memperketat
+    # gate (fraksi >= 6 dB turun dari 0,96 ke 0,93), bukan melonggarkannya.
+    polygon: [[-2.75, 14.0], [2.75, 14.0], [2.75, 34.0], [-2.75, 34.0]]
     height: 1.5
-    grid_spacing_m: 0.5      # grid peta cakupan E1
-  target_lanes: [[[-2.5, 16.0], [-2.5, 36.0]], [[2.5, 16.0], [2.5, 36.0]]]
-  sidewalks: [[[-4.0, 16.0], [-2.0, 16.0], [-2.0, 36.0], [-4.0, 36.0]],
-              [[2.0, 16.0], [4.0, 16.0], [4.0, 36.0], [2.0, 36.0]]]
+    grid_spacing_m: 0.5      # grid peta cakupan E1; 11 x 40 = 440 titik
+  target_lanes: [[[-1.0, 14.0], [-1.0, 34.0]], [[1.0, 14.0], [1.0, 34.0]]]
+  sidewalks: [[[-3.0, 14.0], [-2.0, 14.0], [-2.0, 34.0], [-3.0, 34.0]],
+              [[2.0, 14.0], [3.0, 14.0], [3.0, 34.0], [2.0, 34.0]]]
 
 radio:
   carrier_frequency_hz: 3.5e+9
@@ -74,21 +92,43 @@ radio:
     rcs_m2: 1.0
 
 ray_tracing:
-  max_depth: 3
+  # DIUKUR, bukan diandaikan (docs/LOG.md 2026-11-11 (f)). §4.2 menyebut
+  # kedalaman 3 sebagai "pengaturan awal"; pada jalan sempit itu meleset jauh.
+  # Dengan hamburan difus DIMATIKAN -- sehingga himpunan jalur deterministik
+  # dan konvergensinya bisa dibaca langsung -- daya jalur langsung di ROI:
+  #   kedalaman 3 : -124,5 dB      kedalaman 5 : -86,4 dB      kedalaman 7 : -86,4 dB
+  # Kedalaman 3 membuang 38 dB karena gelombang terpandu di lorong sempit
+  # butuh lebih banyak pantulan dinding. Dengan difus hidup, hamburan MENAMBAL
+  # lubang itu (-87,4 dB di kedalaman 3) sehingga kesalahannya tidak terlihat.
+  max_depth: 5
   specular_reflection: true
   diffuse_reflection: true
   diffraction: true
-  samples_per_src: 1.0e+5     # naikkan sampai stabil (< 0,5 dB), lihat Fase 2
+  # Konvergen: 3e4 / 1e5 / 3e5 memberi -83,79 / -83,72 / -83,52 dB (< 0,3 dB).
+  samples_per_src: 1.0e+5
   ris_per_element: true      # false = synthetic array (bandingkan di E0)
-  # Anggaran jalur per sumber. Buffer image-method berukuran
+  # ANGGARAN JALUR. Buffer image-method berukuran
   #   max_num_paths_per_src * jumlah_sumber * 16 B
-  # dan TIDAK mengecil bila rx_batch_size diturunkan; dengan M = 64 nilai 1e6
-  # memberi 1 GiB per buffer dan beberapa buffer sekaligus menghabiskan 12 GB.
-  # Nilai 1e5 (102 MiB per buffer) muat. Konvergensinya DIUKUR, bukan
-  # diandaikan -- lihat docs/LOG.md: pada v0.1 nilai yang terlalu rendah
-  # memotong jalur dan menjatuhkan daya 28 dB tanpa error apa pun.
-  max_num_paths_per_src: 1.0e+5
+  # dan TIDAK mengecil bila rx_batch_size diturunkan. Yang dibatasi VRAM
+  # karena itu HASIL KALI-nya, bukan nilai per sumber -- jadi satu nilai tetap
+  # pasti salah di salah satu sisi. Kanal langsung punya 8 sumber dan butuh
+  # 1e6; kanal RIS per-elemen punya 64 sumber dan 1e6 di situ = 1 GiB per
+  # buffer, yang OOM. max_paths_total menurunkan nilai per sumber dari
+  # anggaran total: 8e6 memberi 1e6 untuk 8 sumber dan 1,25e5 untuk 64,
+  # keduanya 128 MB (122 MiB) per buffer.
+  #
+  # Pemotongan diam-diam ini SANGAT besar dan tidak memunculkan error: pada
+  # 1e5 jalur, menaikkan samples_per_src 1e5 -> 1e7 MENJATUHKAN daya jalur
+  # langsung dari -86 ke -144 dB, jauh di bawah lantai spekular -86,4 dB yang
+  # secara fisik mustahil. Uji kewarasannya: daya dengan difus hidup tidak
+  # boleh lebih kecil daripada dengan difus mati.
+  # Sisi RIS diverifikasi TIDAK terikat: pada 16 sumber, 1e5 lawan 1e6 jalur
+  # berbeda 0,1 dB, dan anggaran ini bersifat per sumber.
+  max_num_paths_per_src: 1.0e+6
+  max_paths_total: 8.0e+6
   rx_batch_size: 128         # turunkan bila VRAM 12 GB habis
+  # llvm (CPU) TIDAK tersedia di mesin ini: jitc_llvm_init() gagal. Satu-satunya
+  # tuas bila VRAM habis adalah max_paths_total dan rx_batch_size.
   drjit_variant: auto        # auto | cuda | llvm (llvm = CPU, tanpa batas VRAM)
 
 sensing:
@@ -109,8 +149,16 @@ gate1:
   # Diukur MRT-dengan-RIS lawan MRT-tanpa-RIS. JANGAN membandingkan pada
   # precoder a_bar: a_bar dioptimalkan untuk mencapai RIS dan melumpuhkan
   # jalur langsung, sehingga melebih-lebihkan peran RIS (+8,8 vs +1,4 dB).
-  ris_gain_threshold_db: 0.0
-  ris_gain_coverage_target: 0.90
+  #
+  # Ambang dinaikkan 2026-11-11 dari 0 dB / 90% menjadi 6 dB / 80% (opsi (a),
+  # disetujui). Alasannya: 0 dB adalah bar yang lemah -- penguatan 0,1 dB pun
+  # dihitung menang -- dan geometri v0.2 lolos dengan hanya +1,4 dB median dan
+  # +0,0 dB di desil terlemah. 6 dB dipilih karena bermakna secara fisik:
+  # dengan penjumlahan koheren, +6 dB berarti amplitudo kaskade RIS sekurangnya
+  # SETARA jalur langsung, yaitu RIS benar-benar menjadi jalur yang melayani
+  # ROI dan bukan sekadar tambahan kecil.
+  ris_gain_threshold_db: 6.0
+  ris_gain_coverage_target: 0.80
 
 mobility:
   dt_s: 0.1

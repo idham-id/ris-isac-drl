@@ -9,10 +9,12 @@ Gate 1 (docs/TASKS.md Fase 1):
   2. BS->ROI harus NLoS di 100% titik grid ROI.
   3. Pada P_max = 30 dBm: SNR komunikasi lewat RIS > 10 dB di >= 90% ROI.
   4. Pada P_max = 30 dBm: SNR radar ideal >= Gamma + 3 dB di >= 80% ROI.
-  5. Penguatan kaskade RIS atas jalur langsung > 0 dB di >= 90% ROI.
+  5. Penguatan RIS (MRT dengan RIS lawan MRT tanpa RIS) > 6 dB di >= 80% ROI.
      Kriteria (5) ditambahkan 2026-11-11: tanpa itu gate bisa lolos sementara
      jalur langsung mendominasi ROI, sehingga premis "RIS yang melayani ROI"
-     gagal diam-diam. Ambang ada di configs/*.yaml (gate1:).
+     gagal diam-diam. Ambangnya dinaikkan dari 0 dB / 90% ke 6 dB / 80% pada
+     hari yang sama, karena 0 dB meloloskan geometri yang hanya menambah
+     +1,4 dB. Ambang ada di configs/*.yaml (gate1:).
 
 Keluar 0 bila Gate 1 lolos, 1 bila tidak.
 """

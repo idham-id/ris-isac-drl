@@ -944,3 +944,172 @@ terbentuk benar: 144 sel, 0,514 × 0,514 m (= 12 × λ/2 pada 3,5 GHz).
 - Bottleneck evaluasi yang sebenarnya diperkirakan Oracle-GD (B3/B4): 300 iterasi
   × 4 restart = 1.200 langkah Adam per keputusan, × 200 episode × 50 langkah =
   1,2e7 iterasi gradien per varian. Harus dibatch lintas episode di GPU.
+
+## 2026-11-11 (f) — Opsi (a): premis diperkuat; dua kesalahan solver ditemukan
+
+Keputusan pengguna atas temuan terbuka entri (e): **opsi (a)** — naikkan ambang
+Gate 1 ke nilai yang bermakna dan cari geometri yang memenuhinya.
+
+Ambang `gate1.ris_gain_*` dinaikkan dari **0 dB di 90%** menjadi **6 dB di 80%**.
+Alasan memilih 6 dB: dengan penjumlahan koheren, penguatan +6 dB berarti
+amplitudo kaskade RIS sekurangnya **setara** jalur langsung, yaitu RIS benar-benar
+menjadi jalur yang melayani ROI. Ambang 0 dB meloloskan penguatan 0,1 dB.
+
+### Mekanisme yang membuat premis berdiri: lebar jalan
+
+Gelombang langsung mencapai ROI sebagai gelombang **terpandu** yang memantul di
+antara kedua dinding jalan B. Jumlah pantulan yang dibutuhkannya ~ jarak/lebar,
+sedangkan hop RIS→ROI adalah LoS dan **tidak terpengaruh lebar sama sekali**.
+Mempersempit jalan karena itu melemahkan jalur langsung tanpa melemahkan jalur
+RIS. Terukur pada d(BS–RIS) ≈ 20 m, grid ROI 0,5 m, setelan solver konvergen:
+
+| lebar jalan | 10 m | 9 m | 8 m | 7 m | **6 m** |
+|---|---|---|---|---|---|
+| d(BS–RIS) | 19,6 m | 20,0 m | 19,6 m | 20,2 m | 20,0 m |
+| jalur langsung (MRT) | −70,9 dB | −78,3 dB | −80,8 dB | −84,3 dB | **−87,8 dB** |
+| kaskade RIS | −76,9 dB | −76,8 dB | −76,3 dB | −76,1 dB | −75,4 dB |
+| penguatan RIS median | +0,8 dB | +3,4 dB | +5,8 dB | +8,2 dB | **+11,9 dB** |
+| fraksi ROI ≥ 6 dB | 0,02 | 0,16 | 0,46 | 0,78 | **0,93** |
+
+Kaskade RIS bergerak 1,5 dB di seluruh baris itu; jalur langsung bergerak 17 dB.
+Jadi lebar jalan bekerja lewat gelombang terpandu, bukan lewat link budget RIS.
+
+Tuas kedua, memundurkan BS di jalan A, bergerak searah (lebar 10 m: +0,5 dB pada
+d = 18,7 m menjadi +7,7 dB pada d = 41,1 m) tetapi mahal: SCNR turun 40 log₁₀ d₁
+dan d(BS–RIS) menjauh dari "≈ 20 m" §2.1. Pada lebar 6 m tuas itu tidak
+diperlukan.
+
+**Koreksi entri (e).** Di situ tercatat "kanyon yang lebih lebar JUSTRU
+memperburuk premis" dari sapuan lebar jalan. Arahnya benar tetapi sebabnya
+salah: sapuan itu mengambil d(BS–RIS) **terkecil yang layak** di tiap lebar,
+sehingga lebar dan jarak BS berubah bersama dan tidak terpisahkan. Pada lebar
+tetap, memundurkan BS justru **memperbaiki** premis. Yang menentukan adalah
+jumlah pantulan dinding, bukan lebar kanyon per se.
+
+### Dua kesalahan solver yang membatalkan angka-angka sebelumnya
+
+Sapuan pertama memberi hasil yang terlalu bagus, dan uji konvergensi
+menunjukkan sebabnya. Keduanya **tidak memunculkan error apa pun**.
+
+**1. `max_depth: 3` meleset 38 dB.** v0.1 sudah menyimpulkan kedalaman 5, tetapi
+paket v0.2-lean datang dengan 3 dan itu terbawa — bug v0.1 **ketiga** yang
+terulang di paket baru. Dengan hamburan difus **dimatikan** (himpunan jalur jadi
+deterministik sehingga konvergensinya terbaca langsung), daya jalur langsung di
+ROI:
+
+| kedalaman | 3 | 5 | 7 |
+|---|---|---|---|
+| difus mati | **−124,5 dB** | −86,4 dB | −86,4 dB |
+| difus hidup | −87,4 dB | −86,4 dB | −87,0 dB |
+
+Kedalaman 3 tidak mampu membangkitkan pantulan dinding yang dibutuhkan gelombang
+terpandu di jalan sempit. Dengan difus hidup, hamburan **menambal** lubang itu
+sehingga kesalahannya tersamarkan — inilah sebabnya ia lolos sampai sekarang.
+Ditetapkan `max_depth: 5` (5 dan 7 sama dalam 0,6 dB).
+
+**2. Anggaran jalur tidak bisa satu nilai.** Buffer image-method berukuran
+`max_num_paths_per_src × jumlah_sumber × 16 B`, jadi yang dibatasi VRAM adalah
+**hasil kali**, bukan nilai per sumber. Satu nilai tetap karena itu pasti salah
+di salah satu sisi. Pada 1e5 jalur, menaikkan `samples_per_src`:
+
+| samples | 1e5 | 1e6 | 1e7 |
+|---|---|---|---|
+| jalur langsung, 1e5 jalur | −86,4 dB | −104,5 dB | **−143,9 dB** |
+| jalur langsung, 1e6 jalur | −83,7 dB | −86,4 dB | −103,2 dB |
+
+Daya **turun** saat sampel dinaikkan — mustahil secara fisik, dan jauh di bawah
+lantai spekular −86,4 dB. Ini pemotongan diam-diam: sampel tambahan mengisi
+buffer dengan jalur difus lemah dan membuang jalur kuat.
+
+Uji kewarasan yang sekarang dipakai: **daya dengan difus hidup tidak boleh lebih
+kecil daripada dengan difus mati.** Dengan uji itu, satu-satunya setelan yang
+sah adalah `samples_per_src = 1e5` dengan `max_num_paths_per_src = 1e6`
+(−83,7 dB, yaitu 2,7 dB di atas lantai spekular — hamburan menambah daya, seperti
+seharusnya). Konvergensi sampel: 3e4 / 1e5 / 3e5 → −83,79 / −83,72 / −83,52 dB
+(< 0,3 dB).
+
+Sisi RIS (64 sumber) tidak muat pada 1e6 jalur (1 GiB per buffer, OOM), tetapi
+**diverifikasi tidak terikat**: pada subarray 16 sumber, 1e5 lawan 1e6 jalur
+berbeda 0,1 dB, dan anggaran ini bersifat per sumber. Ditambahkan
+`ray_tracing.max_paths_total` (8e6) yang menurunkan nilai per sumber dari
+anggaran total: 1e6 untuk 8 sumber, 1,25e5 untuk 64 — keduanya 128 MB per buffer.
+`RayTracingSettings.paths_budget()` menggantikan `for_array_size()`; tes di
+`tests/test_rt_settings.py`.
+
+Ini **menutup utang terbuka** dari entri (b) dan (e): uji konvergensi
+`max_num_paths_per_src` dan `samples_per_src` yang dijadwalkan Fase 2 sudah
+selesai, dan hasilnya mengubah setelan.
+
+**Catatan perangkat:** varian Dr.Jit LLVM (CPU) **tidak tersedia** di mesin ini —
+`jitc_llvm_init(): LLVM API initialization failed`. Mitigasi OOM di `CLAUDE.md`
+yang menyebut LLVM tidak bisa dipakai; tuas yang tersisa hanya `max_paths_total`
+dan `rx_batch_size`.
+
+### Geometri final
+
+| | v0.2 (entri e) | v0.2 Fase 1 revisi |
+|---|---|---|
+| lebar jalan | 10 m | **6 m** (trotoar 2 × 1,0 m + lajur 2 × 2,0 m) |
+| BS | (−13, −3, 10) | **(−16, −1, 10)** |
+| RIS | (4,9, 6, 6) | **(2,9, 4, 6)** |
+| d(BS–RIS) | 20,4 m | **20,0 m** |
+| ROI | y ∈ [16, 36], 640 titik | **y ∈ [14, 34], 440 titik** |
+| normal RIS | 52,4° ke BS dan ROI | **49,4°** |
+
+ROI dilebarkan sampai **0,25 m** dari tiap dinding, bukan 1 m seperti sebelumnya:
+§2.1 menempatkan pengguna di **trotoar**, jadi ROI yang berhenti di tepi lajur
+meninggalkan pengguna di luar basis data kanal. Titik terdekat ke dinding juga
+titik dengan penguatan RIS terkecil, sehingga memasukkannya **memperketat** gate
+(fraksi ≥ 6 dB turun 0,96 → 0,93), bukan melonggarkannya.
+
+### Gate 1 — LOLOS (`results/e1/29b21f95195c/`)
+
+| Kriteria | Ambang | Hasil |
+|---|---|---|
+| BS→RIS LoS | — | PASS (True) |
+| BS→ROI NLoS | 100% titik | PASS (0,0000) |
+| SNR komunikasi > 10 dB | ≥ 90% | PASS (**1,000**) |
+| SCNR ideal ≥ Γ + 3 dB | ≥ 80% | PASS (**1,000**) |
+| **penguatan RIS > 6 dB** | **≥ 80%** | PASS (**0,927**) |
+| oracle LoS = PathSolver(depth 0) | 0 beda | PASS (0/64) |
+
+Median pada 30 dBm: SNR komunikasi 48,5 dB, SCNR 41,6 dB. Penguatan RIS median
+**+11,9 dB**, p10 **+7,0 dB** — bandingkan dengan +1,4 dB dan p10 +0,0 dB pada
+geometri lama. Seluruh E1 di bawah 10 detik.
+
+### Premis sekarang berdiri di KEDUA sisi
+
+Pemisahan kontribusi (`e1_split`, geometri baru):
+
+| Komunikasi (SNR dB) | p10 | median | p90 |
+|---|---|---|---|
+| langsung (MRT) | 31,2 | 36,1 | 43,1 |
+| RIS saja (kaskade) | 43,7 | **48,6** | 52,3 |
+
+Jalur langsung menang di **0,0%** titik (sebelumnya 38,4%).
+
+| SCNR ideal (dB) | p10 | median | p90 |
+|---|---|---|---|
+| langsung saja | −5,3 | 4,8 | 18,8 |
+| RIS saja | 31,8 | **41,6** | 49,0 |
+
+**Kriteria radar Gate 1 terpenuhi oleh jalur langsung saja hanya di 16,4% ROI**,
+turun dari **99,5%** pada geometri lama. Ini menutup keberatan kedua di entri (e):
+klaim "RIS dibutuhkan untuk sensing" kini teruji dengan ukuran yang sama dan
+berdiri.
+
+### Dokumen yang diselaraskan
+
+`docs/EXPERIMENT_DESIGN.md` §2.1 (lebar jalan + mekanisme gelombang terpandu),
+§4.2 (kedalaman dan anggaran jalur, dengan angka konvergensinya), §8 (tabel
+parameter: ray tracing dan baris geometri baru); `docs/TASKS.md` Gate 1
+kriteria 5; docstring `scripts/run_e1_coverage.py`.
+
+### Sisa yang terbuka
+
+* `scripts/place_geometry.py` masih mencari **jarak BS–RIS terkecil**, bukan
+  penguatan RIS terbesar; objektif itu sudah terbukti keliru dua kali. Sapuan
+  yang dipakai di sini ada di scratchpad, belum dipindahkan ke `scripts/`.
+* Kalibrasi `radio.ris.calibration_db` masih 0,0 dan menunggu E0 (Fase 2).
+
+---

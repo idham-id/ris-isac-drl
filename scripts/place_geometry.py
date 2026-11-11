@@ -43,9 +43,15 @@ def roi_bounds(y_ris: float, d_min: float, d_max: float) -> tuple[float, float]:
     return y_ris + d_min, y_ris + d_max
 
 
-def roi_points(y_ris, half_width, d_min, d_max, height, spacing):
-    """Titik grid di dalam segmen ROI, bentuk (N, 3)."""
-    xr = half_width - 1.0
+def roi_points(y_ris, half_width, d_min, d_max, height, spacing, margin=1.0):
+    """Titik grid di dalam segmen ROI, bentuk (N, 3).
+
+    ``margin`` = jarak bebas dari tiap dinding. Harus cukup kecil agar ROI
+    tetap mencakup TROTOAR: §2.1 menempatkan pengguna di trotoar, jadi ROI
+    yang hanya mencakup lajur akan meninggalkan pengguna di luar basis data
+    kanal. Perannya semata menjaga titik grid tidak jatuh di permukaan dinding.
+    """
+    xr = half_width - margin
     y_lo, y_hi = roi_bounds(y_ris, d_min, d_max)
     xs = np.arange(-xr + spacing / 2, xr, spacing)
     ys = np.arange(y_lo + spacing / 2, y_hi, spacing)

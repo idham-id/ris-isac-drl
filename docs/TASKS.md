@@ -47,7 +47,9 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 **Gate 1:**
 - BS→RIS LoS dan 0% titik ROI LoS dari BS.
 - Pada P_max = 30 dBm: SNR komunikasi lewat RIS > 10 dB di ≥ 90% ROI, dan SNR radar ideal ≥ Γ + 3 dB di ≥ 80% ROI.
-- **Penguatan kaskade RIS atas jalur langsung > 0 dB di ≥ 90% ROI** (ditambahkan 2026-11-11). Tanpa kriteria ini gate bisa lolos sementara jalur langsung mendominasi ROI: ROI yang *tanpa garis pandang* belum tentu *kekurangan daya*, dan bila jalur langsung menang maka premis "RIS yang melayani ROI" gagal diam-diam dan daya ungkit aksi agen hilang. Ambang ada di `configs/base.yaml` (`gate1:`).
+- **Penguatan RIS > 6 dB di ≥ 80% ROI** (ditambahkan 2026-11-11). Tanpa kriteria ini gate bisa lolos sementara jalur langsung mendominasi ROI: ROI yang *tanpa garis pandang* belum tentu *kekurangan daya*, dan bila jalur langsung menang maka premis "RIS yang melayani ROI" gagal diam-diam dan daya ungkit aksi agen hilang. Ambang ada di `configs/base.yaml` (`gate1:`).
+  - Diukur **MRT-dengan-RIS lawan MRT-tanpa-RIS**, yaitu sistem ber-RIS melawan sistem tanpa RIS yang sama-sama melakukan beamforming optimal. Jangan membandingkan pada precoder `ā`: `ā` dioptimalkan untuk mencapai RIS dan melumpuhkan jalur langsung, sehingga melebih-lebihkan peran RIS (+8,8 dB lawan +1,4 dB pada geometri yang sama).
+  - Ambangnya dinaikkan dari 0 dB / 90% ke **6 dB / 80%** pada hari yang sama (opsi (a), disetujui): 0 dB adalah bar yang lemah — penguatan 0,1 dB pun dihitung menang — dan geometri v0.2 lolos dengan hanya +1,4 dB median dan +0,0 dB di desil terlemah. 6 dB bermakna secara fisik: dengan penjumlahan koheren, +6 dB berarti amplitudo kaskade RIS sekurangnya **setara** jalur langsung.
 - Jika gagal: pendekkan ROI atau jarak BS–RIS, atau naikkan L. Catat keputusan.
 
 ---

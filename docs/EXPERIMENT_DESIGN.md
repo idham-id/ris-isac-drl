@@ -74,7 +74,24 @@ Revisi angka hipotesis setelah Fase 3 jika tidak realistis.
 
 Jarak BS–RIS dan ROI dipilih dari hitungan link budget (§3.8); keduanya bisa digeser di Fase 1 jika gate gagal.
 
-**Lebar jalan ditetapkan 10 m di Fase 1 melalui pengukuran** (`scripts/place_geometry.py`, `docs/LOG.md` 2026-11-11). Syarat "0% LoS BS→ROI" menuntut BS cukup jauh di barat sudut, `u ≥ 2a/(s−1)` dengan `a` setengah lebar jalan, sehingga jalan 20 m memaksa d(BS–RIS) = 50,6 m sedangkan jalan 10 m cukup ≈ 20 m seperti yang diminta di atas. Penempatan akhir memaksimalkan penguatan RIS atas jalur langsung, bukan meminimalkan d(BS–RIS): sapuan menunjukkan kanyon yang lebih lebar justru **memperburuk** premis NLoS, karena jalur langsung membutuhkan lebih sedikit pantulan sementara kaskade RIS kehilangan hop BS–RIS yang memanjang.
+**Lebar jalan ditetapkan 6 m di Fase 1 melalui pengukuran** (`scripts/place_geometry.py`, `docs/LOG.md` 2026-11-11). Dua syarat berbeda harus dipenuhi sekaligus, dan keduanya dikendalikan lebar jalan.
+
+*Syarat bayangan.* "0% LoS BS→ROI" menuntut BS cukup jauh di barat sudut, `u ≥ 2a/(s−1)` dengan `a` setengah lebar jalan, sehingga jalan 20 m memaksa d(BS–RIS) = 50,6 m sedangkan jalan 6 m cukup jauh di bawah 20 m.
+
+*Syarat premis.* NLoS saja tidak cukup: ROI bisa **tanpa garis pandang tetapi tidak kekurangan daya**, karena gelombang langsung tetap sampai sebagai gelombang **terpandu** yang memantul di antara kedua dinding jalan B. Jumlah pantulan yang dibutuhkannya sebanding dengan jarak/lebar, sedangkan hop RIS→ROI adalah LoS dan tidak terpengaruh lebar sama sekali. **Mempersempit jalan karena itu melemahkan jalur langsung tanpa melemahkan jalur RIS.** Terukur pada d(BS–RIS) ≈ 20 m (penguatan RIS median / fraksi titik ≥ 6 dB):
+
+| lebar jalan | 10 m | 9 m | 8 m | 7 m | **6 m** |
+|---|---|---|---|---|---|
+| d(BS–RIS) | 19,6 m | 20,0 m | 19,6 m | 20,2 m | 20,0 m |
+| jalur langsung (MRT) | −70,9 dB | −78,3 dB | −80,8 dB | −84,3 dB | **−87,8 dB** |
+| penguatan RIS median | +0,8 dB | +3,4 dB | +5,8 dB | +8,2 dB | **+11,9 dB** |
+| fraksi ROI ≥ 6 dB | 0,02 | 0,16 | 0,46 | 0,78 | **0,93** |
+
+Kaskade RIS praktis tidak bergerak di seluruh baris itu (−76,9 sampai −75,4 dB); yang berubah 17 dB hanyalah jalur langsung. Itulah bukti bahwa lebar jalan bekerja lewat gelombang terpandu, bukan lewat link budget RIS.
+
+Tuas kedua adalah memundurkan BS di jalan A, yang memaksa gelombang langsung membelok lebih tajam; pada lebar 6 m tuas itu tidak diperlukan, sehingga d(BS–RIS) = 20,0 m tetap seperti yang diminta di atas. Penampang 6 m: trotoar 2 × 1,0 m + lajur 2 × 2,0 m — jalan kota tua yang padat, yaitu justru tempat pemasangan RIS masuk akal.
+
+Penempatan akhir memaksimalkan penguatan RIS atas sistem tanpa RIS dengan kendala Gate 1 lainnya, **bukan** meminimalkan d(BS–RIS).
 
 ### 2.2 Scene
 
@@ -201,7 +218,11 @@ Sionna RT 1.x/2.x belum mendukung RIS. RIS dimodelkan sebagai perangkat radio de
 | **h**_{d,k}, **h**_{d,t} | BS-tx (N_t) | Titik lintasan | Per titik |
 | **h**^{(r)}_{d,t} | Titik lintasan | BS-rx (N_r) | Per titik (atau via resiprositas) |
 
-Pengaturan awal: kedalaman maks 3; spekular + difus + difraksi; **array per elemen** untuk RIS. Jarak Fraunhofer RIS 8×8 sekitar 3–6 m (2D²/λ dengan D = sisi 0,34 m atau diagonal 0,49 m), jadi ROI (≥ 10 m) umumnya di medan jauh; per elemen tetap dipakai sebagai default yang aman, dan E0 menentukan apakah synthetic array yang lebih cepat cukup akurat. Nama API (`load_scene`, `PlanarArray`, `Transmitter`, `Receiver`, `PathSolver`, dsb.) diverifikasi di dokumentasi versi terpasang.
+Kedalaman maks **5** (bukan 3 seperti rancangan awal), spekular + difus + difraksi; **array per elemen** untuk RIS.
+
+Kedalaman, `samples_per_src`, dan `max_num_paths_per_src` **diukur sampai konvergen di Fase 1**, tidak diandaikan (`docs/LOG.md` 2026-11-11 (f)). Dengan hamburan difus dimatikan — sehingga himpunan jalur deterministik dan konvergensinya terbaca langsung — daya jalur langsung di ROI adalah −124,5 / −86,4 / −86,4 dB pada kedalaman 3 / 5 / 7: **kedalaman 3 membuang 38 dB** karena gelombang terpandu di jalan sempit butuh lebih banyak pantulan dinding. Dengan difus hidup, hamburan menambal lubang itu sehingga kesalahannya tidak terlihat.
+
+Anggaran jalur dibatasi VRAM pada **hasil kali** `max_num_paths_per_src × jumlah_sumber`, bukan pada nilai per sumber, sehingga satu nilai tetap pasti salah di salah satu sisi: kanal langsung (8 sumber) butuh 10⁶, sedangkan 10⁶ pada kanal RIS per-elemen (64 sumber) adalah 1 GiB per buffer dan OOM. `max_paths_total` karena itu menurunkan nilai per sumber dari anggaran total. Pemotongan jalur **tidak memunculkan error apa pun**: pada 10⁵ jalur, menaikkan `samples_per_src` dari 10⁵ ke 10⁷ menjatuhkan daya jalur langsung dari −86 ke −144 dB. Uji kewarasannya: daya dengan difus hidup tidak boleh lebih kecil daripada dengan difus mati. Jarak Fraunhofer RIS 8×8 sekitar 3–6 m (2D²/λ dengan D = sisi 0,34 m atau diagonal 0,49 m), jadi ROI (≥ 10 m) umumnya di medan jauh; per elemen tetap dipakai sebagai default yang aman, dan E0 menentukan apakah synthetic array yang lebih cepat cukup akurat. Nama API (`load_scene`, `PlanarArray`, `Transmitter`, `Receiver`, `PathSolver`, dsb.) diverifikasi di dokumentasi versi terpasang.
 
 ### 4.3 Anggaran komputasi untuk GPU 12 GB
 
@@ -346,7 +367,8 @@ Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 = **15 run** × 1e6 l
 | L, ξ, Γ, β_s | 4096, 0,01, 13 dB, 1 |
 | Δt, T, κ, λ | 0,1 s, 50, 0,1, 1,0 |
 | ε, σ_u, σ_ref, σ_max | −20 dB, 0,5 m, 0,5 m, 5 m |
-| Ray tracing | max_depth 3, spekular + difus + difraksi, per elemen |
+| Ray tracing | max_depth **5**, samples_per_src 1e5, max_num_paths_per_src 1e6 (max_paths_total 8e6), spekular + difus + difraksi, per elemen — semuanya diukur sampai konvergen, §4.2 |
+| Geometri | jalan 6 m; BS (−16, −1, 10); RIS (2,9, 4, 6); d(BS–RIS) 20,0 m; ROI y ∈ [14, 34], 440 titik @ 0,5 m |
 | Lintasan | 200 / 30 / 50 |
 | Seed pelatihan | 3 |
 

@@ -22,6 +22,7 @@ class RayTracingSettings:
     max_depth: int
     samples_per_src: int
     max_num_paths_per_src: int
+    max_paths_total: int
     specular_reflection: bool
     diffuse_reflection: bool
     diffraction: bool
@@ -37,6 +38,7 @@ class RayTracingSettings:
             # Default Sionna 1e6. Nilai terlalu rendah MEMOTONG jalur dan
             # membiaskan koefisien tanpa error apa pun (docs/LOG.md 2026-11-11).
             max_num_paths_per_src=int(r.get("max_num_paths_per_src", 1_000_000)),
+            max_paths_total=int(r.get("max_paths_total", 0)),
             specular_reflection=bool(r["specular_reflection"]),
             diffuse_reflection=bool(r["diffuse_reflection"]),
             diffraction=bool(r["diffraction"]),
@@ -44,20 +46,26 @@ class RayTracingSettings:
             rx_batch_size=int(r["rx_batch_size"]),
         )
 
-    def for_array_size(self, num_tx_ant: int) -> "RayTracingSettings":
-        """Perkecil batch dan anggaran jalur untuk array besar.
+    def paths_budget(self, num_sources: int) -> int:
+        """Anggaran jalur per sumber yang masih muat di VRAM.
 
-        Dengan array per-elemen jumlah sumber ray tracing sama dengan jumlah
-        antena pancar, sehingga memori tumbuh linear terhadapnya. Nilai di sini
-        berasal dari pengukuran di GPU 12 GB (docs/LOG.md 2026-11-10 butir 2).
+        Buffer image-method berukuran ``max_num_paths_per_src * num_sources
+        * 16 B`` dan TIDAK mengecil bila ``rx_batch_size`` diturunkan
+        (docs/LOG.md 2026-11-11). Yang terbatas karena itu adalah HASIL KALI,
+        bukan nilai per sumber -- sehingga satu nilai tetap di config akan
+        selalu salah untuk salah satu sisi: cukup longgar bagi kanal langsung
+        (8 sumber) berarti OOM bagi kanal RIS per-elemen (64 sumber), dan yang
+        muat bagi 64 sumber MEMOTONG kanal langsung sampai 50 dB tanpa error
+        apa pun (konvergensi diukur, docs/LOG.md 2026-11-11 (f)).
+
+        ``max_paths_total`` karena itu menetapkan anggaran total; nilai per
+        sumber diturunkan darinya. ``max_paths_total = 0`` mematikan mekanisme
+        ini dan memakai nilai per sumber apa adanya.
         """
-        if self.synthetic_array or num_tx_ant <= 144:
-            return self
-        return RayTracingSettings(
-            **{**self.__dict__,
-               "max_num_paths_per_src": min(self.max_num_paths_per_src, 50_000),
-               "rx_batch_size": min(self.rx_batch_size, 128)},
-        )
+        if self.max_paths_total <= 0:
+            return self.max_num_paths_per_src
+        return max(1, min(self.max_num_paths_per_src,
+                          self.max_paths_total // max(1, int(num_sources))))
 
 
 def release_gpu_memory() -> None:
@@ -96,6 +104,10 @@ def narrowband_coefficients(scene, tx_array, rx_array, tx_position, rx_positions
     scene.tx_array = tx_array
     scene.rx_array = rx_array
 
+    # Jumlah sumber ray tracing: satu per antena pancar bila array per-elemen.
+    num_sources = 1 if settings.synthetic_array else int(tx_array.num_ant)
+    paths_per_src = settings.paths_budget(num_sources)
+
     out: list[np.ndarray] = []
     batch = max(1, settings.rx_batch_size)
     n_batches = (len(rx_positions) + batch - 1) // batch
@@ -115,7 +127,7 @@ def narrowband_coefficients(scene, tx_array, rx_array, tx_position, rx_positions
             scene,
             max_depth=settings.max_depth,
             samples_per_src=settings.samples_per_src,
-            max_num_paths_per_src=settings.max_num_paths_per_src,
+            max_num_paths_per_src=paths_per_src,
             synthetic_array=settings.synthetic_array,
             specular_reflection=settings.specular_reflection,
             diffuse_reflection=settings.diffuse_reflection,
