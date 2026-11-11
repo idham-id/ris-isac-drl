@@ -115,18 +115,52 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 ## Fase 5 — Pelatihan E2 dan E4b (minggu 5)
 
 - [x] `src/risisac/train/train.py --config ... --method {ppo_po, ppo_full, ppo_po_absolute} --seed ...`: simpan model, `VecNormalize`, log CSV/TensorBoard, checkpoint, evaluasi val setiap 50 ribu langkah.
-- [x] `scripts/run_all_training.sh`: antrean 15 run (M1, M2, A1 × 3 seed; M1 Γ = 10 dan 16 × 3 seed), bisa dilanjutkan. Jalankan di CPU, 2–3 run paralel sesuai jumlah core.
+- [x] `scripts/run_all_training.sh`: antrean **21 run** (M1, M2, A1 × 3 seed pada config base; M1 × 3 seed pada Γ = 10 dan 16, masing-masing 2 juta langkah; M1 × 3 seed pada κ = 0,25 dan 0,50), bisa dilanjutkan lewat `done.json`. Jalankan di CPU, 2–3 run paralel sesuai jumlah core.
 
-    Paralelisme **diukur**: JOBS=1 → 2.069 langkah/detik; JOBS=3 → 1.704 per run = 5.112 agregat; **JOBS=4 gagal** (36 proses × torch melewati batas memori commit Windows). Satu run 9,4 menit untuk observasi 696, **16,3 menit** untuk M2 (observasi 2232).
+    Paralelisme **diukur**: JOBS=1 → 2.069 langkah/detik; JOBS=3 → 1.704 per run = 5.112 agregat; **JOBS=4 gagal** (36 proses × torch melewati batas memori commit Windows). Satu run 1 juta langkah: 9,4 menit untuk observasi 696, **16,3 menit** untuk M2 (observasi 2232); Γ = 10/16 dengan 2 juta langkah 18,7 menit. Antrean 21 run selesai dalam **92 menit** pada JOBS=3, nol kegagalan.
 - [x] Gambar F4 (`results/gate5/<config_hash>/F4_training.png`).
 
 **Gate 5:** M1 konvergen (reward val naik < 2% dalam 20% langkah terakhir) dan mengalahkan B1 serta B2 di val. Jika gagal di pertengahan minggu, terapkan mitigasi §10: inisialisasi dari B2, kurikulum target diam → bergerak, κ lebih kecil.
 
 > Kriteria "naik < 2%" tidak terdefinisi apa adanya (reward mulai negatif, berakhir positif), jadi dibuat eksplisit: **kenaikan 20% langkah terakhir dibagi total kenaikan sejak langkah 0**. Bebas skala dan aman melewati nol; angka mentahnya ikut dilaporkan.
 
-> **Status 2026-11-11: LOLOS** (config base, Γ = 13 dB). M1 ekor −1,46% (ambang 2%); M1 **+3,783** lawan B1 −0,750 dan B2 **+2,261**. F4 dibuat dari tiga seed per metode.
+> **Status 2026-11-12: LOLOS** pada kelima config — base (Γ = 13), Γ = 10, Γ = 16, κ = 0,25, κ = 0,50.
+> Yang dilaporkan adalah checkpoint **terbaik di val**, bukan kebijakan akhir (§6.1); `done.json`
+> mencatat `best_timesteps` tiap run.
 >
-> **Terbuka — belum diputuskan, lihat `docs/LOG.md` 2026-11-11 (k):** (1) M1/M2 memenuhi SCNR hanya di **41%** langkah sementara B2 di 99,8%; penyebabnya **bukan** λ melainkan kendala fasa inkremental — A1 dengan λ yang sama mencapai deteksi **0,95–0,96 dengan rate 8,4** di 350–450 ribu langkah pada ketiga seed. (2) Ketiga seed A1 lalu **ambruk** ke deteksi ~0,55 dengan rate tak berubah, sehingga melaporkan model AKHIR menempatkan A1 2,7 poin di bawah yang dicapainya; pemilihan model pada val membutuhkan `save_vecnormalize=True` dan pelatihan ulang. (3) M1 pada Γ = 10 dan 16 belum konvergen (ekor +2,09% dan +7,85%).
+> | config | M1 reward/langkah | deteksi | rate min | ekor | B1 | B2 |
+> |---|---|---|---|---|---|---|
+> | base, Γ = 13 | **+4,098** | 0,440 | 8,18 | −1,46% | −0,750 | +2,261 |
+> | κ = 0,25 | +3,873 | 0,404 | 8,31 | −0,41% | −0,750 | +2,261 |
+> | κ = 0,50 | +3,782 | 0,401 | 8,32 | +0,29% | −0,750 | +2,261 |
+> | Γ = 10 (2e6) | +6,198 | 0,617 | 8,41 | −0,20% | +0,970 | +2,264 |
+> | Γ = 16 (2e6) | +3,159 | 0,354 | 8,20 | −2,56% | −2,881 | +2,259 |
+>
+> Pada config base, M2 +4,144 (deteksi 0,426) dan **A1 +8,128** (deteksi 0,952, SCNR median 25,3 dB).
+>
+> **Temuan 1 — sapuan κ menutup pertanyaannya: bukan ukuran langkah.** κ = 0,1 / 0,25 / 0,50 memberi
+> 4,098 / 3,873 / 3,782 dengan deteksi 0,440 / 0,404 / 0,401. Menaikkan κ lima kali lipat (dari 10
+> langkah menjadi 2 langkah untuk menggeser satu elemen sejauh π) **tidak** memperbaiki pemenuhan
+> SCNR sama sekali — malah sedikit menurun. Dengan λ dan geometri yang sama, A1 (fasa absolut)
+> mencapai deteksi 0,952. Jadi yang mengikat adalah **parameterisasi fasa inkremental**, bukan
+> κ dan bukan λ. κ besar hanya memperkecil ragam antar-seed (simpangan baku 0,010 dan 0,075
+> lawan 0,255 pada κ = 0,1): konvergen lebih cepat ke dataran yang sedikit lebih rendah.
+>
+> **Temuan 2 — A1 berosilasi, tidak konvergen.** Ketiga seed gagal kriteria ekor (+32% pada
+> ketiganya). Kurva seed 0: naik ke +8,22 di 350 ribu langkah, ambruk ke +3,84 di 750 ribu, lalu
+> pulih sebagian ke +6,44 di akhir. Angka A1 yang dilaporkan adalah **puncak**, bukan dataran, dan
+> harus ditulis demikian di paper. Jarak puncak–akhir: +1,78 / +2,56 / +2,74 poin. M1 dan M2 jauh
+> lebih tenang (jarak 0,01–0,58 poin).
+>
+> **Temuan 3 — Γ = 16 tidak stabil antar-seed.** Simpangan baku 0,941 (seed: +4,380 / +3,009 /
+> +2,089); seed 2 jatuh **di bawah B2** (+2,259) dan satu seed belum konvergen walau 2 juta langkah.
+> Γ = 10 dan 13 stabil (simpangan baku 0,475 dan 0,255, semua seed mengalahkan B2). Catat di F8
+> sebagai batas ambang yang masih bisa dipenuhi, jangan ditutup oleh rata-rata.
+>
+> **Terbuka — keputusan desain, perlu persetujuan:** A1 mengalahkan M1 dua kali lipat (+8,128 lawan
+> +4,098) dengan λ, geometri, dan anggaran langkah yang sama. Apakah M1 (inkremental) tetap metode
+> utama paper dengan A1 sebagai pembanding atas, atau A1 menjadi metode utama dan inkremental menjadi
+> studi ablasi? Lihat `docs/LOG.md` 2026-11-12.
 
 ---
 

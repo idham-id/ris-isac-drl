@@ -1,0 +1,16 @@
+# Sapuan kappa (docs/EXPERIMENT_DESIGN.md Sec 5.3, disetujui 2026-11-12).
+#
+# Alasannya diukur, bukan ditebak: pada kappa = 0,1 M1 dan M2 tidak pernah
+# melewati pemenuhan SCNR 0,46 pada seed mana pun, sedangkan A1 -- yang
+# berbeda HANYA pada mode fasa -- mencapai deteksi 0,95-0,96 dengan rate yang
+# sama di 350-450 ribu langkah. Jadi yang mengikat adalah seberapa cepat fasa
+# boleh bergerak, bukan bobot reward. Dari fasa acak, menggeser satu elemen
+# sejauh pi butuh pi/(kappa pi) langkah: 10 langkah pada kappa = 0,1 (sekitar
+# 29% episode 35 langkah), 4 langkah pada 0,25, 2 langkah pada 0,5.
+defaults: [base]
+
+experiment:
+  name: kappa025
+
+action:
+  phase_step_kappa: 0.25

@@ -1708,3 +1708,90 @@ titik belum konvergen pada 1e6 langkah.
   (558 x 4 lawan 174 x 4). Catat untuk T3 (biaya komputasi, E6).
 
 ---
+
+## 2026-11-12 — Fase 5 dijalankan ulang: 21 run, Gate 5 lolos di kelima config
+
+Antrean 21 run (base × 3 metode × 3 seed; κ = 0,25 dan 0,50 × 3 seed; Γ = 10
+dan 16 × 3 seed pada 2 juta langkah) selesai dalam **92 menit** pada JOBS=3,
+nol kegagalan. Commit kode `d553599`, basis data kanal `6949e64b5418` (tidak
+ada ray tracing ulang: `channel_config_hash` tidak berubah).
+
+### (a) Model yang dilaporkan sekarang checkpoint terbaik di val
+
+`save_vecnormalize=True` pada checkpoint, lalu `select_best()` menyalin
+pasangan (model, statistik VecNormalize) terbaik ke `model_best.zip` dan
+`vecnormalize_best.pkl`. Diverifikasi memuat ulang persis: selisih
+**0,00e+00** antara nilai yang tercatat saat pelatihan dan nilai yang dihitung
+ulang dari berkas. Tanpa statistik yang cocok kerugiannya terukur ~1 poin
+(A1 seed 0: +8,220 menjadi +7,180). `best_timesteps` masuk `done.json`.
+
+Jarak puncak–akhir terukur: A1 +1,78 / +2,56 / +2,74 poin; M1 +0,12…+0,50;
+M2 +0,01…+0,58. Satu kasus batas ikut teruji: Γ = 16 seed 0 terbaik di
+langkah 2.002.944, yaitu evaluasi **sesudah** pembaruan PPO terakhir, yang
+ada di `model.zip` dan bukan di checkpoint bernama sama.
+
+### (b) Sapuan κ: ukuran langkah bukan penyebabnya
+
+| κ | reward/langkah | deteksi | simpangan baku antar-seed |
+|---|---|---|---|
+| 0,10 | **+4,098** | 0,440 | 0,255 |
+| 0,25 | +3,873 | 0,404 | 0,010 |
+| 0,50 | +3,782 | 0,401 | 0,075 |
+
+Menaikkan κ lima kali lipat — dari 10 langkah menjadi 2 langkah untuk
+menggeser satu elemen sejauh π, yaitu dari 29% panjang episode menjadi 6% —
+**tidak memperbaiki pemenuhan SCNR sama sekali**, malah sedikit menurun.
+Dengan λ, geometri, dan anggaran langkah yang sama, A1 (fasa absolut)
+mencapai deteksi 0,952. Ini menutup pertanyaan yang dibuka 2026-11-11 (k):
+yang mengikat adalah **parameterisasi fasa inkremental**, bukan κ dan bukan λ.
+
+κ besar berguna untuk hal lain: ragam antar-seed turun dari 0,255 menjadi
+0,010, yaitu konvergen lebih cepat dan lebih seragam ke dataran yang sedikit
+lebih rendah. Layak disebut di §5.3 sebagai pertukaran, bukan sebagai
+kegagalan.
+
+### (c) Γ pada 2 juta langkah
+
+| Γ (dB) | M1 | deteksi | B1 | B2 | simpangan baku M1 |
+|---|---|---|---|---|---|
+| 10 | +6,198 | 0,617 | +0,970 | +2,264 | 0,475 |
+| 13 | +4,098 | 0,440 | −0,750 | +2,261 | 0,255 |
+| 16 | +3,159 | 0,354 | −2,881 | +2,259 | 0,941 |
+
+Ketiganya sekarang konvergen sebagai rata-rata (ekor −0,20% / −1,46% /
+−2,56%), berbeda dari 1 juta langkah yang menyisakan +2,09% dan +7,85%.
+
+**Γ = 16 tidak stabil antar-seed:** +4,380 / +3,009 / +2,089; seed 2 jatuh di
+bawah B2 (+2,259) dan seed 0 belum konvergen walau 2 juta langkah. Ini harus
+muncul di F8 sebagai batas ambang yang masih bisa dipenuhi, bukan ditutup oleh
+rata-rata.
+
+### (d) A1 berosilasi — angkanya puncak, bukan dataran
+
+Ketiga seed A1 gagal kriteria ekor dengan +32%. Kurva val seed 0 (reward per
+langkah, ribu langkah):
+
+```
+0:+0,53  150:+4,58  250:+7,01  350:+8,22  450:+7,51  550:+7,24
+650:+5,47  750:+3,84  850:+4,54  950:+6,02  1003:+6,44
+```
+
+Naik ke puncak di 350 ribu, ambruk 4,4 poin sampai 750 ribu, lalu pulih
+sebagian. Itu osilasi, bukan konvergensi. Angka A1 yang dilaporkan (+8,128)
+adalah puncak dan **harus ditulis demikian di paper**, dengan kurvanya di F4.
+M1 dan M2 jauh lebih tenang dan benar-benar mendatar.
+
+### (e) Terbuka — keputusan desain, perlu persetujuan
+
+A1 mengalahkan M1 dua kali lipat (+8,128 lawan +4,098; deteksi 0,952 lawan
+0,440) dengan λ, geometri, dan anggaran langkah yang sama, dan selisihnya
+seluruhnya pada sensing: rate minimum keduanya ~8,2–8,4. Pilihannya:
+
+1. M1 tetap metode utama, A1 sebagai batas atas yang menunjukkan harga
+   kendala inkremental. Jujur, tetapi metode utama paper kalah dari
+   pembandingnya sendiri.
+2. A1 menjadi metode utama, inkremental menjadi studi ablasi tentang biaya
+   kendala perangkat keras. Perlu alasan fisik mengapa fasa absolut per
+   langkah masuk akal untuk RIS nyata.
+
+Belum diputuskan.

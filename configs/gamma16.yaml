@@ -8,3 +8,11 @@ experiment:
 
 sensing:
   scnr_threshold_db: 16.0
+
+training:
+  # 2e6, bukan 1e6 (disetujui 2026-11-12). Pada 1e6 kurva val kedua titik ini
+  # masih menanjak -- ekor +2,09% (Gamma = 10) dan +7,85% (Gamma = 16) lawan
+  # ambang konvergensi 2% -- sehingga F8 akan membandingkan tiga titik Gamma
+  # yang tidak sama matangnya. Gamma = 13 sendiri sudah konvergen di 1e6
+  # (ekor -1,46%) dan karena itu dibiarkan.
+  total_timesteps: 2.0e+6

@@ -294,6 +294,8 @@ Normalisasi observasi dengan running mean/std, dibekukan saat evaluasi.
 a_t = [Δφ ∈ [−1,1]^M, ρ_raw ∈ [−1,1], p_raw ∈ [−1,1]^K], dimensi M + 1 + K = 67.
 
 - φ_t = (φ_{t−1} + κπ Δφ) mod 2π, κ = 0,1. Ablasi: absolut φ_t = π(Δφ + 1).
+
+  **κ disapu atas {0,1; 0,25; 0,5}** (ditambahkan 2026-11-12, disetujui). Alasannya terukur, bukan dugaan: pada κ = 0,1 M1 dan M2 tidak pernah melewati pemenuhan SCNR 0,46 pada seed mana pun, sedangkan A1 — yang berbeda **hanya** pada mode fasa — mencapai pemenuhan 0,95–0,96 dengan rate yang sama. Jadi yang mengikat adalah seberapa cepat fasa boleh bergerak, bukan bobot reward λ. Dari fasa acak, menggeser satu elemen sejauh π butuh 1/κ langkah: 10 langkah pada κ = 0,1 (≈ 29% episode 35 langkah), 4 pada 0,25, 2 pada 0,5. Lihat `docs/LOG.md` 2026-11-11 (k).
 - ρ = (ρ_raw + 1)/2: fraksi daya sensing.
 - p = softmax(p_raw): bobot daya pengguna.
 - **W**_c: arah RZF dari ĥ_{e,k} (regularisasi K σ_n²/P_max), kolom dinormalisasi lalu diskalakan √((1−ρ) P_max p_k).
@@ -333,7 +335,9 @@ Laju **tidak** turun saat λ naik — memenuhi kendala sensing di geometri ini p
 | M2 | PPO-FullCSI | Penuh + frame-stack 4 |
 | A1 | PPO-PO-absolute (ablasi) | Seperti M1, fasa absolut |
 
-Hiperparameter: lr 3e-4, γ 0,95, GAE λ 0,95, clip 0,2, n_steps 512 × 8 env, batch 256, 10 epoch, ent_coef 0, MLP [256, 256], 1e6 langkah. Tuning ringan hanya di val, lalu dibekukan. **Pelatihan di CPU** (MLP kecil, env NumPy).
+Hiperparameter: lr 3e-4, γ 0,95, GAE λ 0,95, clip 0,2, n_steps 512 × 8 env, batch 256, 10 epoch, ent_coef 0, MLP [256, 256], 1e6 langkah (2e6 untuk E4b, lihat §7). Tuning ringan hanya di val, lalu dibekukan. **Pelatihan di CPU** (MLP kecil, env NumPy).
+
+**Model yang dilaporkan adalah checkpoint dengan reward val terbaik**, bukan kebijakan pada langkah terakhir (ditambahkan 2026-11-12, disetujui). Val dievaluasi tiap 50 ribu langkah dan statistik `VecNormalize` disimpan bersama tiap checkpoint, sehingga kebijakan terpilih dapat dimuat ulang persis — terverifikasi sampai 0,0e+00. Ini bukan kehalusan: ketiga seed A1 mencapai puncaknya di 350–450 ribu langkah lalu **ambruk**, pemenuhan SCNR 0,95 → 0,55 **tanpa kehilangan rate sedikit pun**. Kebijakan akhir karena itu memang lebih buruk, bukan hasil tukar-tambah, dan melaporkannya akan menempatkan A1 2,7 poin di bawah capaiannya. Pemilihan dilakukan di val dan test tetap tidak tersentuh sampai §7 E3.
 
 ### 6.2 Baseline
 
@@ -357,13 +361,13 @@ Prioritas: **P1** wajib untuk paper, **P2** penting tetapi murah, **P3** hanya j
 | E2 | P1 | Kurva pelatihan M1, M2, A1, masing-masing 3 seed | F4 |
 | E3 | P1 | Semua metode di set test: 50 lintasan × 3 seed noise = 150 episode, P_max = 30 dBm. Metrik: rata-rata dan CDF rate minimum, pemenuhan SCNR (% langkah ≥ Γ), durasi track, galat posisi tracker | T2, F5, F6 |
 | E4a | P2 | Agen dari E2 dievaluasi pada P_max ∈ {20, 25, 30, 35, 40} dBm dan kelompok kecepatan {1–3, 4–7, 8–10} m/s, tanpa latih ulang | F7 |
-| E4b | P1 | Latih ulang M1 untuk Γ ∈ {10, 16} dB (3 seed; Γ = 13 dari E2), evaluasi semua metode untuk menggambar trade-off rate minimum vs pemenuhan SCNR | F8 |
-| E5 | P2 | Ablasi fasa inkremental vs absolut (dari E2) | T3 |
+| E4b | P1 | Latih ulang M1 untuk Γ ∈ {10, 16} dB (3 seed, **2e6 langkah**; Γ = 13 dari E2), evaluasi semua metode untuk menggambar trade-off rate minimum vs pemenuhan SCNR | F8 |
+| E5 | P2 | Ablasi fasa inkremental vs absolut (dari E2), **plus sapuan κ ∈ {0,1; 0,25; 0,5} untuk M1 (3 seed)** — mengubah ablasi dari biner menjadi kuantitatif | T3 |
 | E6 | P2 | Waktu inferensi per keputusan M1 vs waktu per langkah B3; waktu prakomputasi ray tracing; waktu pelatihan | T3 |
 | E7 | P3 | Ketahanan tanpa latih ulang: NMSE ε ∈ {−30, −20, −10} dB, σ_u ∈ {0,1, 0,5, 2} m | F9 |
 | E8 | P3 | Uji di scene kota bawaan tanpa latih ulang | Teks |
 
-Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 = **15 run** × 1e6 langkah.
+Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 + M1(κ = 0,25; 0,5) × 3 = **21 run** (15 × 1e6 + 6 × 2e6 langkah).
 
 ---
 
@@ -378,12 +382,14 @@ Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 = **15 run** × 1e6 l
 | K, Q | 2, 1 |
 | σ_rcs | 1 m² |
 | L, ξ, Γ, β_s | 4096, 0,01, 13 dB, 1 |
-| Δt, T, κ, λ | 0,1 s, 50, 0,1, **10,0** (λ ditetapkan di Fase 3, §5.4) |
+| Δt, T, κ, λ | 0,1 s, 50, 0,1 (disapu {0,1; 0,25; 0,5}, §5.3), **10,0** (λ ditetapkan di Fase 3, §5.4) |
 | ε, σ_u, σ_ref, σ_max | −20 dB, 0,5 m, 0,5 m, 5 m |
 | Ray tracing | max_depth **5**, samples_per_src 1e5, max_num_paths_per_src 1e6 (max_paths_total 8e6), spekular + difus + difraksi, per elemen — semuanya diukur sampai konvergen, §4.2 |
 | Geometri | jalan 6 m; BS (−16, −1, 10); RIS (2,9, 4, 6); d(BS–RIS) 20,0 m; ROI y ∈ [14, 34], 440 titik @ 0,5 m |
 | Lintasan | 200 / 30 / 50 |
 | Seed pelatihan | 3 |
+| Langkah pelatihan | 1e6 (E2, sapuan κ); 2e6 (E4b, karena pada 1e6 kurva val Γ = 10 dan 16 masih menanjak) |
+| Model yang dilaporkan | checkpoint dengan reward val terbaik (§6.1) |
 
 Semua nilai di `configs/base.yaml`.
 

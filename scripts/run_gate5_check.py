@@ -185,7 +185,10 @@ def main() -> int:
                       "dilewati dari rata-rata F4.")
                 continue
             seed_curves[seed] = curve[METRIC]
-            finals[seed] = info["done"]["final_val"]
+            # Yang dilaporkan adalah kebijakan TERPILIH (terbaik di val,
+            # §6.1), bukan kebijakan akhir: ketiga seed A1 ambruk setelah
+            # puncaknya, jadi model akhir bukan hasil pelatihan yang terbaik.
+            finals[seed] = info["done"].get("best_val") or info["done"]["final_val"]
         curves[paper_id] = {"timesteps": steps_ref, "seeds": seed_curves}
 
         if args.reeval_agents:
@@ -296,12 +299,12 @@ def reevaluate(cfg, db, method: str, by_seed: dict, eval_seed: int) -> dict:
                             train=False, seed=eval_seed, num_envs=1,
                             subprocess=False, normalize=False, frame_stack=1,
                             env_overrides=spec["env_overrides"])
-        venv = VecNormalize.load(str(info["dir"] / "vecnormalize.pkl"), venv)
+        venv = VecNormalize.load(str(info["dir"] / "vecnormalize_best.pkl"), venv)
         venv.training = False
         venv.norm_reward = False
         from stable_baselines3.common.vec_env import VecFrameStack
         venv = VecFrameStack(venv, n_stack=int(cfg["observation"]["frame_stack"]))
-        model = PPO.load(str(info["dir"] / "model"), device="cpu")
+        model = PPO.load(str(info["dir"] / "model_best"), device="cpu")
         out[seed] = summarise(rollout_agent(model, venv,
                                             list(range(store_size)), eval_seed))
         venv.close()

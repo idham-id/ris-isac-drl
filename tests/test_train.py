@@ -226,3 +226,61 @@ def test_sapuan_grid_b1_memakai_grid_config(cfg, store):
     assert out["best"]["rho"] in set(r["rho"] for r in out["grid"])
     best_row = max(out["grid"], key=lambda r: r["reward_per_step"])
     assert out["best"]["rho"] == best_row["rho"]
+
+
+# --------------------------------------------------- pemilihan model di val
+def test_select_best_memilih_puncak_dan_bukan_model_akhir(tmp_path):
+    """Puncak val yang diikuti penurunan harus menang atas kebijakan akhir."""
+    from risisac.train import select_best
+
+    ckpt = tmp_path / "checkpoints"
+    ckpt.mkdir()
+    for step in (50, 100, 150):
+        (ckpt / f"ppo_{step}_steps.zip").write_text(f"model{step}")
+        (ckpt / f"ppo_vecnormalize_{step}_steps.pkl").write_text(f"norm{step}")
+    (tmp_path / "model.zip").write_text("final")
+    (tmp_path / "vecnormalize.pkl").write_text("normfinal")
+
+    rows = [{"timesteps": 0, "reward_per_step": -3.0},
+            {"timesteps": 50, "reward_per_step": 1.0},
+            {"timesteps": 100, "reward_per_step": 8.0},   # puncak, lalu ambruk
+            {"timesteps": 150, "reward_per_step": 5.0}]
+    best = select_best(rows, tmp_path, total=150)
+    assert best["timesteps"] == 100
+    assert (tmp_path / "model_best.zip").read_text() == "model100"
+    assert (tmp_path / "vecnormalize_best.pkl").read_text() == "norm100"
+
+
+def test_select_best_memakai_model_akhir_bila_puncaknya_di_akhir(tmp_path):
+    """Baris pada langkah terakhir adalah evaluasi SESUDAH pembaruan terakhir
+    PPO, yang modelnya ada di ``model.zip`` -- bukan checkpoint bernama sama."""
+    from risisac.train import select_best
+
+    ckpt = tmp_path / "checkpoints"
+    ckpt.mkdir()
+    (ckpt / "ppo_100_steps.zip").write_text("checkpoint-sebelum-update")
+    (ckpt / "ppo_vecnormalize_100_steps.pkl").write_text("norm-sebelum-update")
+    (tmp_path / "model.zip").write_text("final")
+    (tmp_path / "vecnormalize.pkl").write_text("normfinal")
+
+    rows = [{"timesteps": 0, "reward_per_step": -3.0},
+            {"timesteps": 100, "reward_per_step": 4.0}]
+    best = select_best(rows, tmp_path, total=100)
+    assert best["timesteps"] == 100
+    assert (tmp_path / "model_best.zip").read_text() == "final"
+
+
+def test_select_best_mengabaikan_garis_dasar_langkah_nol(tmp_path):
+    """Langkah 0 tidak punya checkpoint; ia garis dasar, bukan kandidat."""
+    from risisac.train import select_best
+
+    ckpt = tmp_path / "checkpoints"
+    ckpt.mkdir()
+    (ckpt / "ppo_50_steps.zip").write_text("m")
+    (ckpt / "ppo_vecnormalize_50_steps.pkl").write_text("n")
+    (tmp_path / "model.zip").write_text("final")
+    (tmp_path / "vecnormalize.pkl").write_text("normfinal")
+
+    rows = [{"timesteps": 0, "reward_per_step": 99.0},
+            {"timesteps": 50, "reward_per_step": -1.0}]
+    assert select_best(rows, tmp_path, total=50)["timesteps"] == 50

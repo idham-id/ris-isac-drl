@@ -5,8 +5,9 @@
 #   JOBS=3 bash scripts/run_all_training.sh       # 3 run paralel
 #   bash scripts/run_all_training.sh base         # hanya config base (9 run)
 #
-# Rincian: (M1, M2, A1) x 3 seed pada config base, lalu M1 x 3 seed pada
-# Gamma = 10 dan 16 (E4b). Jumlahnya 9 + 6 = 15 run x 1e6 langkah.
+# Rincian: (M1, M2, A1) x 3 seed pada config base; M1 x 3 seed pada Gamma = 10
+# dan 16 (E4b, 2e6 langkah); M1 x 3 seed pada kappa = 0,25 dan 0,5 (sapuan
+# Sec 5.3). Jumlahnya 9 + 6 + 6 = 21 run.
 #
 # **Bisa dilanjutkan.** Tiap run menulis ``done.json`` saat selesai dan
 # dilewati pada pemanggilan berikutnya, jadi skrip ini aman dijalankan ulang
@@ -53,7 +54,7 @@ export PYTHONPATH="$REPO/src${PYTHONPATH:+:$PYTHONPATH}"
 
 CONFIGS=("$@")
 if [ ${#CONFIGS[@]} -eq 0 ]; then
-    CONFIGS=(base gamma10 gamma16)
+    CONFIGS=(base kappa025 kappa050 gamma10 gamma16)
 fi
 
 LOG_DIR="$REPO/results/train/logs"
@@ -61,7 +62,7 @@ mkdir -p "$LOG_DIR"
 
 queue=()
 for config in "${CONFIGS[@]}"; do
-    # Gamma = 10 dan 16 hanya untuk M1 (E4b); M2 dan A1 hanya di config utama.
+    # Sapuan Gamma dan kappa hanya untuk M1; M2 dan A1 hanya di config utama.
     if [ "$config" = "base" ]; then
         methods=(ppo_po ppo_full ppo_po_absolute)
     else

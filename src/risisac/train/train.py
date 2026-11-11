@@ -23,8 +23,9 @@ Setiap run menulis ke::
         meta.json             commit git, versi, waktu, hiperparameter efektif
         progress.csv, tb/     log SB3 (CSV + TensorBoard)
         eval_val.csv          evaluasi val tiap `training.eval_every_steps`
-        checkpoints/          checkpoint berkala
-        model.zip, vecnormalize.pkl
+        checkpoints/          checkpoint + VecNormalize berkala
+        model.zip, vecnormalize.pkl           kebijakan AKHIR
+        model_best.zip, vecnormalize_best.pkl kebijakan terbaik di val
         done.json             penanda selesai; run yang sudah ada dilewati
 
 Evaluasi val memakai env TERPISAH pada ``train=False`` (P_max tetap 30 dBm,
@@ -38,6 +39,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import shutil
 import sys
 import time
 from dataclasses import dataclass, field
@@ -247,9 +249,15 @@ def train_one(spec: RunSpec, cfg: dict | None = None,
 
     eval_cb = _make_callback(evaluator, every, out_dir / "eval_val.csv",
                              train_venv, prefix)
+    # save_vecnormalize: statistik observasi ikut disimpan tiap checkpoint.
+    # Tanpa itu checkpoint tidak bisa dipakai ulang dengan benar -- obs_rms
+    # terus berubah selama pelatihan, dan memuat kebijakan lama dengan
+    # statistik akhir terukur memangkas reward val A1 dari +8,220 ke +7,180
+    # (docs/LOG.md 2026-11-11 (k)).
     ckpt_cb = CheckpointCallback(save_freq=max(every // n_envs, 1),
                                  save_path=str(out_dir / "checkpoints"),
-                                 name_prefix="ppo", verbose=0)
+                                 name_prefix="ppo", save_vecnormalize=True,
+                                 verbose=0)
 
     t0 = time.time()
     model.learn(total_timesteps=total, callback=[eval_cb, ckpt_cb],
@@ -259,6 +267,10 @@ def train_one(spec: RunSpec, cfg: dict | None = None,
 
     model.save(out_dir / "model")
     _find_vecnormalize(train_venv).save(str(out_dir / "vecnormalize.pkl"))
+    best = select_best(eval_cb.rows, out_dir, total)
+    print(f"{prefix}model terbaik di val: {best['reward_per_step']:+.3f} "
+          f"pada {best['timesteps']} langkah "
+          f"(akhir {final['reward_per_step']:+.3f})", flush=True)
 
     summary = {
         "method": spec.method, "paper_id": method["paper_id"],
@@ -276,6 +288,8 @@ def train_one(spec: RunSpec, cfg: dict | None = None,
         "observation_dim": int(train_venv.observation_space.shape[0]),
         "action_dim": int(train_venv.action_space.shape[0]),
         "final_val": final,
+        "best_val": best,
+        "best_timesteps": int(best["timesteps"]),
         "python": sys.version.split()[0],
         "torch": torch.__version__,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -290,6 +304,39 @@ def train_one(spec: RunSpec, cfg: dict | None = None,
     print(f"{prefix}selesai dalam {train_seconds / 60:.1f} menit "
           f"({total / train_seconds:.0f} langkah/detik) -> {out_dir}", flush=True)
     return summary
+
+
+def select_best(rows: list[dict], out_dir: Path, total: int) -> dict:
+    """Salin checkpoint dengan reward val terbaik ke ``model_best.zip``.
+
+    Pemilihan model pada split val adalah praktik baku dan §6.1 memang
+    menyediakan val untuk itu ("tuning ringan hanya di val, lalu dibekukan").
+    Di sini ia bukan kemewahan: ketiga seed A1 mencapai puncaknya di 350-450
+    ribu langkah lalu **ambruk** -- deteksi 0,95 -> 0,55 tanpa kehilangan rate
+    sedikit pun, jadi kebijakan akhir memang lebih buruk, bukan hasil
+    tukar-tambah (docs/LOG.md 2026-11-11 (k)).
+
+    Baris pada ``timesteps == total`` adalah evaluasi SESUDAH pembaruan
+    terakhir PPO, yang modelnya ada di ``model.zip`` -- bukan checkpoint
+    bernama sama, yang disimpan sebelum pembaruan itu. Baris langkah 0
+    dikecualikan: ia garis dasar kebijakan acak dan tidak punya checkpoint.
+    """
+    usable = [r for r in rows if r["timesteps"] > 0]
+    best = max(usable, key=lambda r: r["reward_per_step"])
+    steps = int(best["timesteps"])
+    if steps >= int(total):
+        src_model = out_dir / "model.zip"
+        src_norm = out_dir / "vecnormalize.pkl"
+    else:
+        ckpt = out_dir / "checkpoints"
+        src_model = ckpt / f"ppo_{steps}_steps.zip"
+        src_norm = ckpt / f"ppo_vecnormalize_{steps}_steps.pkl"
+    if not src_model.exists() or not src_norm.exists():
+        raise FileNotFoundError(
+            f"checkpoint {steps} tidak lengkap: {src_model}, {src_norm}")
+    shutil.copy2(src_model, out_dir / "model_best.zip")
+    shutil.copy2(src_norm, out_dir / "vecnormalize_best.pkl")
+    return best
 
 
 def main(argv=None) -> int:
