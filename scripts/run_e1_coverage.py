@@ -9,6 +9,10 @@ Gate 1 (docs/TASKS.md Fase 1):
   2. BS->ROI harus NLoS di 100% titik grid ROI.
   3. Pada P_max = 30 dBm: SNR komunikasi lewat RIS > 10 dB di >= 90% ROI.
   4. Pada P_max = 30 dBm: SNR radar ideal >= Gamma + 3 dB di >= 80% ROI.
+  5. Penguatan kaskade RIS atas jalur langsung > 0 dB di >= 90% ROI.
+     Kriteria (5) ditambahkan 2026-11-11: tanpa itu gate bisa lolos sementara
+     jalur langsung mendominasi ROI, sehingga premis "RIS yang melayani ROI"
+     gagal diam-diam. Ambang ada di configs/*.yaml (gate1:).
 
 Keluar 0 bila Gate 1 lolos, 1 bila tidak.
 """
@@ -66,6 +70,13 @@ def main() -> int:
     gamma_db = float(sens["scnr_threshold_db"])
     n_int = int(sens["integration_samples"])
     m_elements = int(ris_cfg["num_rows"]) * int(ris_cfg["num_cols"])
+    gate = cfg["gate1"]
+    comm_thr = float(gate["comm_snr_threshold_db"])
+    comm_target = float(gate["comm_coverage_target"])
+    radar_thr = gamma_db + float(gate["radar_margin_db"])
+    radar_target = float(gate["radar_coverage_target"])
+    gain_thr = float(gate["ris_gain_threshold_db"])
+    gain_target = float(gate["ris_gain_coverage_target"])
     p_values = [20.0, 30.0, 40.0]
     p_default = float(radio["p_max_dbm"])
 
@@ -160,8 +171,12 @@ def main() -> int:
     # Fasa fokus terbaik per titik, lalu kanal efektif maju dan balik.
     phi = focus_phases(u[None, :], g)                                   # (N, M)
     c_casc = cascaded_coefficient(u[None, :], g, phi)                   # (N,)
-    c_eff = hd @ a_bar + c_casc                                         # (N,)
+    c_dir = hd @ a_bar                                                  # (N,)
+    c_eff = c_dir + c_casc                                              # (N,)
     b = hd_rx + (np.exp(1j * phi) * g) @ H.T                            # (N, Nr)
+
+    # Penguatan kaskade RIS atas jalur langsung, dengan precoder yang sama.
+    ris_gain_db = to_db(np.abs(c_casc) ** 2) - to_db(np.abs(c_dir) ** 2)
 
     gain_direct = np.sum(np.abs(hd) ** 2, axis=1)     # MRT, per Watt pancar
     gain_ris = np.abs(c_eff) ** 2
@@ -178,27 +193,36 @@ def main() -> int:
     print(f"  {'P_max':>6s} {'komunikasi >10 dB':>19s} {'radar >=G+3':>13s} "
           f"{'median SNR_c':>13s} {'median SCNR':>12s}")
     for p in p_values:
-        print(f"  {p:5.0f}  {float((snr_ris[p] > 10.0).mean()):18.3f} "
-              f"{float((scnr[p] >= gamma_db + 3.0).mean()):13.3f} "
+        print(f"  {p:5.0f}  {float((snr_ris[p] > comm_thr).mean()):18.3f} "
+              f"{float((scnr[p] >= radar_thr).mean()):13.3f} "
               f"{float(np.median(snr_ris[p])):12.1f} "
               f"{float(np.median(scnr[p])):12.1f}")
     print(f"  (BS langsung @30 dBm: median "
           f"{float(np.median(snr_direct[30.0])):.1f} dB, >10 dB di "
-          f"{float((snr_direct[30.0] > 10.0).mean()):.3f})")
+          f"{float((snr_direct[30.0] > comm_thr).mean()):.3f})")
 
     # ----------------------------------------------------------------- Gate 1
-    cov_comm = float((snr_ris[p_default] > 10.0).mean())
-    cov_radar = float((scnr[p_default] >= gamma_db + 3.0).mean())
+    cov_comm = float((snr_ris[p_default] > comm_thr).mean())
+    cov_radar = float((scnr[p_default] >= radar_thr).mean())
+    cov_gain = float((ris_gain_db > gain_thr).mean())
+    print("")
+    print(f"Penguatan RIS atas jalur langsung: median "
+          f"{float(np.median(ris_gain_db)):+.1f} dB, p10 "
+          f"{float(np.percentile(ris_gain_db, 10)):+.1f} dB, "
+          f"> {gain_thr:.0f} dB di {cov_gain:.3f} ROI")
     checks = {
         "bs_ris_los": {"pass": los_bs_ris, "value": los_bs_ris},
         "bs_roi_nlos": {"pass": float(los_bs_roi.mean()) == 0.0,
                         "value": float(los_bs_roi.mean())},
-        "comm_coverage": {"pass": cov_comm >= 0.90, "value": cov_comm,
-                          "target": 0.90, "threshold_db": 10.0,
+        "comm_coverage": {"pass": cov_comm >= comm_target, "value": cov_comm,
+                          "target": comm_target, "threshold_db": comm_thr,
                           "p_max_dbm": p_default},
-        "radar_coverage": {"pass": cov_radar >= 0.80, "value": cov_radar,
-                           "target": 0.80, "threshold_db": gamma_db + 3.0,
+        "radar_coverage": {"pass": cov_radar >= radar_target, "value": cov_radar,
+                           "target": radar_target, "threshold_db": radar_thr,
                            "p_max_dbm": p_default},
+        "ris_beats_direct": {"pass": cov_gain >= gain_target, "value": cov_gain,
+                             "target": gain_target, "threshold_db": gain_thr,
+                             "median_gain_db": float(np.median(ris_gain_db))},
         "los_oracle_agrees": {"pass": vr["num_mismatch"] == 0,
                               "value": vr["num_mismatch"],
                               "of": vr["num_points"]},
@@ -213,6 +237,7 @@ def main() -> int:
     np.savez_compressed(
         out_dir / "e1_coverage.npz", grid=grid, los_bs_roi=los_bs_roi,
         los_ris_roi=los_ris_roi, gain_direct=gain_direct, gain_ris=gain_ris,
+        ris_gain_db=ris_gain_db,
         scnr_db=np.stack([scnr[p] for p in p_values]),
         p_max_dbm_values=np.array(p_values), G=G, H=H, a_bar=a_bar,
     )

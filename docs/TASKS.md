@@ -47,6 +47,7 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 **Gate 1:**
 - BS→RIS LoS dan 0% titik ROI LoS dari BS.
 - Pada P_max = 30 dBm: SNR komunikasi lewat RIS > 10 dB di ≥ 90% ROI, dan SNR radar ideal ≥ Γ + 3 dB di ≥ 80% ROI.
+- **Penguatan kaskade RIS atas jalur langsung > 0 dB di ≥ 90% ROI** (ditambahkan 2026-11-11). Tanpa kriteria ini gate bisa lolos sementara jalur langsung mendominasi ROI: ROI yang *tanpa garis pandang* belum tentu *kekurangan daya*, dan bila jalur langsung menang maka premis "RIS yang melayani ROI" gagal diam-diam dan daya ungkit aksi agen hilang. Ambang ada di `configs/base.yaml` (`gate1:`).
 - Jika gagal: pendekkan ROI atau jarak BS–RIS, atau naikkan L. Catat keputusan.
 
 ---

@@ -4,6 +4,91 @@ Entri terbaru di atas. Setiap entri bertanggal dan menyebut fase/gate terkait.
 
 ---
 
+## 2026-11-11 (d) — Geometri dioptimalkan ulang; kriteria Gate 1 baru
+
+Lanjutan entri (c). Dua keputusan disetujui: ukur dulu BS yang lebih jauh, dan
+tambahkan kriteria "RIS mengungguli jalur langsung" ke Gate 1.
+
+### Hipotesis saya SALAH: menjauhkan BS memperburuk premis
+
+Sapuan lebar jalan (`results/e1/761053d10851/width_tradeoff.py`), tiap lebar
+memakai penempatan layak dengan d(BS-RIS) terkecil:
+
+| lebar | d(BS-RIS) | penguatan RIS median | p10 | langsung > RIS | radar OK (RIS saja) |
+|---|---|---|---|---|---|
+| **10 m** | 19,6 | **+6,4 dB** | -0,4 | 13,1% | 1,000 |
+| 12 m | 24,8 | +3,4 | -3,0 | 27,5% | 0,999 |
+| 14 m | 30,2 | -2,6 | -8,4 | 65,1% | 0,990 |
+| 16 m | 36,4 | -3,6 | -9,7 | 76,2% | 0,975 |
+| 20 m | 50,6 | -5,3 | -11,9 | 82,5% | 0,887 |
+
+Dugaan saya — berdasarkan v0.1, di mana BS 72 m memberi penguatan besar —
+adalah menjauhkan BS akan memulihkan premis. Terukur sebaliknya. Kanyon yang
+lebih lebar membuat jalur langsung butuh **lebih sedikit** pantulan untuk
+mencapai ROI, sementara kaskade RIS kehilangan hop BS-RIS yang memanjang
+(19,6 -> 50,6 m, sekitar 8 dB). Kriteria radar juga ikut memburuk, jadi jalan
+lebar kalah di kedua sumbu sekaligus. Opsi "jauhkan BS" dibatalkan.
+
+### Objektif pencarian penempatan ternyata keliru
+
+Baris 10 m di atas memberi +6,4 dB, sedangkan geometri yang sudah ditulis ke
+config memberi +2,1 dB — padahal keduanya "jalan 10 m, BS ~19,6 m". Bedanya
+hanya RIS bergeser 2 m. Sensitivitas sebesar itu menunjukkan
+`place_geometry.py` meminimalkan besaran yang salah: jarak BS-RIS, bukan
+penguatan RIS.
+
+Pencarian diulang dengan objektif yang benar
+(`results/e1/761053d10851/opt_placement.py`):
+
+| lebar | y_RIS | x_BS | d | sudut dari normal | penguatan median | langsung > RIS |
+|---|---|---|---|---|---|---|
+| **10** | **6,0** | **-13,0** | 20,4 | 52,4 deg | **+8,8 dB** | **8,4%** |
+| 10 | 7,0 | -11,0 | 19,2 | 55,1 | +3,6 | 27,8% |
+| 10 | 8,0 | -11,0 | 19,7 | 56,3 | +2,2 | 38,0% |
+| 10 | 13,0 | -9,0 | 21,6 | 63,2 | -9,5 | 95,3% |
+
+RIS harus **serapat mungkin ke sudut**: sudut datang dari normal RIS yang
+menentukan, bukan jarak. Geometri final: BS `[-13, -3, 10]`, RIS `[4.9, 6, 6]`,
+normal `[-0.909, 0.417, -0.015]`, ROI `y in [16, 36]`, d(BS-RIS) 20,4 m.
+
+### Kriteria Gate 1 baru
+
+Ditambahkan ke `docs/TASKS.md`, §7 `docs/EXPERIMENT_DESIGN.md`, dan
+`configs/base.yaml` (blok `gate1:`, agar tidak ada angka ambang di kode):
+
+> Penguatan kaskade RIS atas jalur langsung > 0 dB di >= 90% ROI.
+
+Ambang 0 dB adalah pernyataan minimal premis: jalur RIS harus mengungguli jalur
+langsung di hampir seluruh ROI. Dengan kriteria ini, geometri lama (38% titik
+dimenangkan jalur langsung, cakupan 0,62) akan **GAGAL** — persis yang
+diinginkan.
+
+### Gate 1 ULANG — LOLOS (enam dari enam)
+
+Hasil di `results/e1/761053d10851/`, config hash `761053d10851`.
+
+| Kriteria | Hasil |
+|---|---|
+| BS->RIS LoS | PASS (True) |
+| BS->ROI NLoS di 100% titik | PASS (0,0000) |
+| SNR komunikasi lewat RIS > 10 dB di >= 90% | PASS (1,000) |
+| SNR radar ideal >= Gamma+3 di >= 80% | PASS (1,000) |
+| **Penguatan RIS > 0 dB di >= 90%** | **PASS (0,914)** |
+| Oracle LoS setara PathSolver(depth=0) | PASS (0/64) |
+
+Median pada 30 dBm: SNR komunikasi 46,8 dB, SCNR 43,7 dB, penguatan RIS
++8,8 dB. Seluruh E1 di bawah 5 detik.
+
+**Marginnya tipis dan harus dinyatakan apa adanya:** kriteria baru lolos di
+0,914 terhadap target 0,90, dan p10 penguatan hanya +0,4 dB. Artinya di
+sepersepuluh ROI terlemah, jalur RIS dan jalur langsung praktis setara. Premis
+berdiri, tetapi tidak dengan margin lega; bila Fase 2 mengubah apa pun yang
+menyentuh kanal (uji konvergensi `samples_per_src` atau `max_num_paths_per_src`),
+kriteria ini harus dicek ulang, bukan dianggap aman.
+
+---
+
+
 ## 2026-11-11 (c) — Migrasi ke v0.2-lean; Gate 0 dan Gate 1 LOLOS, satu temuan terbuka
 
 Paket `ris-isac-drl` v0.2-lean diterima dan menggantikan v0.1. Migrasi dilakukan

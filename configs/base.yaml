@@ -30,21 +30,25 @@ scene:
   # Koordinat ditetapkan di Fase 1 dengan scripts/place_geometry.py, yang
   # mencari d(BS-RIS) terkecil yang masih memberi 0% LoS BS->ROI. Lebar jalan
   # ikut dicari: bayangan sudut gedung menuntut u >= 2a/(s-1), sehingga jalan
-  # 20 m memaksa d(BS-RIS) = 50,6 m sedangkan jalan 10 m cukup 19,7 m -- yaitu
-  # "~20 m" yang diminta §2.1. Lihat docs/LOG.md 2026-11-11 (Fase 1 v0.2).
-  bs_position: [-11.0, -3.0, 10.0]   # jalan A, d(BS-RIS) = 19,7 m
+  # 20 m memaksa d(BS-RIS) = 50,6 m sedangkan jalan 10 m cukup ~20 m -- yaitu
+  # yang diminta §2.1. Penempatan akhir TIDAK meminimalkan d(BS-RIS) melainkan
+  # memaksimalkan penguatan RIS atas jalur langsung: sapuan menunjukkan jalan
+  # lebih lebar (BS lebih jauh) JUSTRU memperburuk premis, karena kanyon lebar
+  # butuh lebih sedikit pantulan sementara kaskade RIS kehilangan hop BS-RIS
+  # yang memanjang. Lihat docs/LOG.md 2026-11-11 (Fase 1 v0.2).
+  bs_position: [-13.0, -3.0, 10.0]   # jalan A, d(BS-RIS) = 20,4 m
   bs_rx_offset: [0.0, 0.0, -0.5]
-  ris_position: [4.9, 8.0, 6.0]      # dinding barat blok NE, dekat sudut
-  # Normal = pembagi dua arah ke BS dan ke pusat ROI; keduanya 56,3 deg dari normal.
-  ris_normal: [-0.936, 0.353, -0.010]
+  ris_position: [4.9, 6.0, 6.0]      # dinding barat blok NE, serapat mungkin ke sudut
+  # Normal = pembagi dua arah ke BS dan ke pusat ROI; keduanya 52,4 deg dari normal.
+  ris_normal: [-0.909, 0.417, -0.015]
   roi:
     distance_from_ris_m: [10.0, 30.0]   # diukur sepanjang jalan B dari RIS
-    polygon: [[-4.0, 18.0], [4.0, 18.0], [4.0, 38.0], [-4.0, 38.0]]
+    polygon: [[-4.0, 16.0], [4.0, 16.0], [4.0, 36.0], [-4.0, 36.0]]
     height: 1.5
     grid_spacing_m: 0.5      # grid peta cakupan E1
-  target_lanes: [[[-2.5, 18.0], [-2.5, 38.0]], [[2.5, 18.0], [2.5, 38.0]]]
-  sidewalks: [[[-4.0, 18.0], [-2.0, 18.0], [-2.0, 38.0], [-4.0, 38.0]],
-              [[2.0, 18.0], [4.0, 18.0], [4.0, 38.0], [2.0, 38.0]]]
+  target_lanes: [[[-2.5, 16.0], [-2.5, 36.0]], [[2.5, 16.0], [2.5, 36.0]]]
+  sidewalks: [[[-4.0, 16.0], [-2.0, 16.0], [-2.0, 36.0], [-4.0, 36.0]],
+              [[2.0, 16.0], [4.0, 16.0], [4.0, 36.0], [2.0, 36.0]]]
 
 radio:
   carrier_frequency_hz: 3.5e+9
@@ -92,6 +96,18 @@ sensing:
   integration_samples: 4096  # L
   clutter_residual: 0.01     # xi
   sensing_interferes_users: true   # beta_s = 1
+
+# Ambang Gate 1 (docs/TASKS.md Fase 1). Kriteria ris_gain_* DITAMBAHKAN pada
+# 2026-11-11: Gate 1 versi v0.2-lean lolos sementara penguatan RIS atas jalur
+# langsung hanya +2 dB dan jalur langsung menang di 38% titik -- premis "RIS
+# yang melayani ROI" gagal diam-diam karena tidak ada kriteria yang mengujinya.
+gate1:
+  comm_snr_threshold_db: 10.0
+  comm_coverage_target: 0.90
+  radar_margin_db: 3.0           # ambang = Gamma + margin
+  radar_coverage_target: 0.80
+  ris_gain_threshold_db: 0.0     # kaskade RIS harus mengungguli jalur langsung
+  ris_gain_coverage_target: 0.90
 
 mobility:
   dt_s: 0.1

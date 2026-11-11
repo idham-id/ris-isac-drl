@@ -74,6 +74,8 @@ Revisi angka hipotesis setelah Fase 3 jika tidak realistis.
 
 Jarak BS–RIS dan ROI dipilih dari hitungan link budget (§3.8); keduanya bisa digeser di Fase 1 jika gate gagal.
 
+**Lebar jalan ditetapkan 10 m di Fase 1 melalui pengukuran** (`scripts/place_geometry.py`, `docs/LOG.md` 2026-11-11). Syarat "0% LoS BS→ROI" menuntut BS cukup jauh di barat sudut, `u ≥ 2a/(s−1)` dengan `a` setengah lebar jalan, sehingga jalan 20 m memaksa d(BS–RIS) = 50,6 m sedangkan jalan 10 m cukup ≈ 20 m seperti yang diminta di atas. Penempatan akhir memaksimalkan penguatan RIS atas jalur langsung, bukan meminimalkan d(BS–RIS): sapuan menunjukkan kanyon yang lebih lebar justru **memperburuk** premis NLoS, karena jalur langsung membutuhkan lebih sedikit pantulan sementara kaskade RIS kehilangan hop BS–RIS yang memanjang.
+
 ### 2.2 Scene
 
 - **Utama:** scene sintetis berbentuk L (dua jalan tegak lurus, gedung kotak beton, tanah), dibuat sebagai mesh + XML Mitsuba. Geometri terkendali dan cepat dihitung.
@@ -317,7 +319,7 @@ Prioritas: **P1** wajib untuk paper, **P2** penting tetapi murah, **P3** hanya j
 | ID | Prio | Desain | Output |
 |---|---|---|---|
 | E0 | P1 | Validasi ringan §4.5 | F3, T1 |
-| E1 | P1 | Peta cakupan BS langsung vs lewat RIS (profil fokus terbaik per titik) dan peta SNR radar ideal di ROI, P_max ∈ {20, 30, 40} dBm | F1, F2 |
+| E1 | P1 | Peta cakupan BS langsung vs lewat RIS (profil fokus terbaik per titik) dan peta SNR radar ideal di ROI, P_max ∈ {20, 30, 40} dBm. Melaporkan juga **penguatan kaskade RIS atas jalur langsung**, yang menjadi kriteria Gate 1 | F1, F2 |
 | E2 | P1 | Kurva pelatihan M1, M2, A1, masing-masing 3 seed | F4 |
 | E3 | P1 | Semua metode di set test: 50 lintasan × 3 seed noise = 150 episode, P_max = 30 dBm. Metrik: rata-rata dan CDF rate minimum, pemenuhan SCNR (% langkah ≥ Γ), durasi track, galat posisi tracker | T2, F5, F6 |
 | E4a | P2 | Agen dari E2 dievaluasi pada P_max ∈ {20, 25, 30, 35, 40} dBm dan kelompok kecepatan {1–3, 4–7, 8–10} m/s, tanpa latih ulang | F7 |
