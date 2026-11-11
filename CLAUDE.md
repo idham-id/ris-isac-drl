@@ -1,24 +1,31 @@
-# CLAUDE.md — Proyek RIS-ISAC-DRL
+# CLAUDE.md — Proyek RIS-ISAC-DRL (versi ramping)
 
 ## Tujuan proyek
-Riset DRL untuk RIS-assisted ISAC pada skenario NLoS site-specific dengan observasi parsial dan target bergerak, memakai NVIDIA Sionna RT untuk kanal. Hasil akhirnya adalah paper jurnal, jadi **kebenaran fisik, reproduksibilitas, dan konsistensi paper–kode lebih penting daripada kecepatan.**
+Paper jurnal Q2 tentang DRL untuk RIS-assisted ISAC pada skenario NLoS site-specific dengan observasi parsial dan target bergerak, memakai NVIDIA Sionna RT untuk kanal. **Tenggat < 2 bulan, PC dengan GPU 12 GB.** Prioritas: kebenaran fisik dan konsistensi paper–kode, lalu kecepatan. Jangan menambah fitur di luar cakupan dokumen desain.
 
 ## Dokumen yang wajib dibaca
-1. `docs/EXPERIMENT_DESIGN.md` — sumber kebenaran tunggal untuk model sistem (E1–E9), MDP, baseline, eksperimen, dan parameter.
-2. `docs/TASKS.md` — urutan kerja per fase dengan gate.
-3. `docs/LOG.md` — catatan keputusan dan masalah (buat jika belum ada; tambahkan entri bertanggal).
+1. `docs/EXPERIMENT_DESIGN.md` (v0.2-lean) — sumber kebenaran tunggal untuk model (E1–E9), MDP, baseline, eksperimen, prioritas P1/P2/P3, dan parameter.
+2. `docs/TASKS.md` — jadwal 8 minggu, fase, gate, dan titik keputusan.
+3. `docs/LOG.md` — catatan keputusan dan masalah (buat jika belum ada; entri bertanggal).
 
 ## Aturan kerja
-- Kerjakan satu fase dari `docs/TASKS.md` pada satu waktu. Sebelum pindah fase, jalankan pemeriksaan gate dan laporkan hasilnya.
-- **Jangan mengubah asumsi fisik, rumus, atau definisi reward tanpa persetujuan.** Jika perlu diubah, usulkan dulu, lalu perbarui `docs/EXPERIMENT_DESIGN.md` dan kode bersamaan.
-- Setiap fungsi yang mengimplementasikan rumus mencantumkan nomor persamaan (misalnya `# (E7)`) di docstring, dan punya tes unit.
-- Tidak ada angka parameter yang ditulis langsung di kode. Semua dari `configs/*.yaml` (lihat `configs/base.yaml`). Override eksperimen ditulis sebagai file YAML kecil yang mewarisi `base.yaml`.
-- **API Sionna berubah antarversi** (0.19 berbasis TensorFlow, 1.x/2.x berbasis Dr.Jit/Mitsuba). Selalu cek dokumentasi atau source versi yang terpasang, jangan mengandalkan ingatan. Catat versi di `docs/LOG.md`.
-- Sionna RT terbaru **tidak** mendukung RIS. Gunakan pendekatan hibrida (§4 desain). Sionna 0.19.2 hanya dipakai di environment terpisah untuk validasi E0.
-- Environment RL (`src/risisac/env`) **tidak boleh** mengimpor Sionna. Ia hanya membaca basis data kanal HDF5.
-- Seed: setiap skrip menerima `--seed`; semua RNG (NumPy, PyTorch, lintasan, noise) diturunkan dari seed itu.
-- Hasil eksperimen disimpan ke `results/<eksperimen>/<config_hash>/<seed>/` beserta salinan config yang dipakai dan git commit. Gambar selalu dibuat dari file hasil.
-- Jangan menyimpan file kanal besar, checkpoint, atau hasil ke git (`.gitignore`).
+- Kerjakan satu fase pada satu waktu. Sebelum pindah fase, jalankan pemeriksaan gate dan laporkan hasilnya.
+- **Jangan mengubah asumsi fisik, rumus, atau reward tanpa persetujuan.** Jika perlu, usulkan, lalu perbarui dokumen desain dan kode bersamaan.
+- Fungsi yang mengimplementasikan rumus mencantumkan nomor persamaan di docstring dan punya tes unit.
+- Tidak ada angka parameter di kode; semua dari `configs/*.yaml`.
+- **API Sionna berubah antarversi.** Cek dokumentasi atau source versi terpasang, jangan mengandalkan ingatan. Catat versi di `docs/LOG.md`.
+- Sionna RT terbaru tidak mendukung RIS: gunakan pendekatan hibrida (§4). **Tidak ada environment Sionna 0.19.2** di versi ini; validasi E0 memakai model analitik.
+- Environment RL (`src/risisac/env`) **tidak boleh** mengimpor Sionna; hanya membaca HDF5.
+- Setiap skrip menerima `--seed`; semua RNG diturunkan dari seed itu.
+- Hasil ke `results/<eksperimen>/<config_hash>/<seed>/` beserta salinan config dan git commit. Gambar dibuat dari file hasil.
+- File kanal, checkpoint, dan hasil tidak masuk git.
+- Jika jadwal mundur, usulkan pemotongan P3 lalu P2. Jangan memotong P1 tanpa persetujuan.
+
+## Batasan perangkat (GPU 12 GB)
+- Ray tracing: batch penerima (`rx_batch_size`, mulai 256) dan `samples_per_src` mulai 1e5. Jika OOM, kecilkan dulu; jika tetap OOM, pakai varian Dr.Jit LLVM (CPU).
+- Catat puncak VRAM dan waktu prakomputasi di `docs/LOG.md`.
+- Pelatihan PPO di **CPU** (MLP kecil, env NumPy). Oracle-GD boleh di GPU.
+- Jangan menjalankan ray tracing dan proses GPU lain bersamaan.
 
 ## Konvensi notasi di kode
 | Desain | Kode | Bentuk array |
@@ -32,18 +39,19 @@ Riset DRL untuk RIS-assisted ISAC pada skenario NLoS site-specific dengan observ
 | **h**_{d,t}, **h**^{(r)}_{d,t} | `hd_tgt_tx`, `hd_tgt_rx` | `(..., Q, Nt)`, `(..., Q, Nr)` |
 | φ | `phi` | `(..., M)`, radian [0, 2π) |
 | **W**_c, **w**_s | `Wc`, `ws` | `(..., Nt, K)`, `(..., Nt)` |
+| η = 4πσ_rcs/λ_c² | `eta` | skalar |
 
-Kanal disimpan sebagai `complex64`. Daya dalam Watt di kode; dBm/dB hanya di config dan plot.
+Kanal `complex64`. Daya dalam Watt di kode; dBm/dB hanya di config dan plot. Panjang gelombang ditulis `wavelength`, bukan `lam`, agar tidak tertukar dengan bobot reward `reward_lambda`.
 
 ## Struktur repo
 ```
 configs/            base.yaml + override eksperimen
 docs/               EXPERIMENT_DESIGN.md, TASKS.md, LOG.md
-envs/               requirements-main.txt, requirements-v019.txt
-scripts/            check_env, precompute_channels, validate_v019, run_sweep, print_param_table
+envs/               requirements.txt
+scripts/            check_env, link_budget, precompute_channels, run_all_training.sh, make_figures, print_param_table
 src/risisac/
   scene/            synthetic_l, placement
-  channels/         geometry, rt_extract, database, validate_compare
+  channels/         geometry, rt_extract, database, validate_analytic
   mobility/         trajectories
   system/           signal_model, precoding, ris
   tracking/         kalman
@@ -58,12 +66,13 @@ data/channels/      (diabaikan git)
 
 ## Perintah umum (lengkapi setelah Fase 0)
 - Tes: `pytest -q`
-- Cek environment: `python scripts/check_env.py`
+- Link budget kasar: `python scripts/link_budget.py --m 64 --d-bs-ris 20 --L 4096`
 - Prakomputasi kanal: `python scripts/precompute_channels.py --config configs/base.yaml --split train`
 - Latih: `python -m risisac.train.train --config configs/base.yaml --method ppo_po --seed 0`
 
 ## Pelajaran dari proyek sebelumnya (jangan diulang)
-- Kode dan paper pernah tidak cocok (model kanal, ukuran RIS, reward, pembanding). Setiap selesai satu fase, cocokkan kembali dengan dokumen desain.
-- Kanal statis yang dibangkitkan sekali membuat masalah menjadi bandit, bukan MDP. Di proyek ini state harus bergantung pada aksi dan waktu.
-- Reward sensing harus menghukum SCNR **di bawah** ambang, bukan di atasnya.
-- `env.step` harus mengembalikan 5 nilai sesuai Gymnasium.
+- Kode dan paper pernah tidak cocok (model kanal, ukuran RIS, reward, pembanding). Cocokkan kembali dengan dokumen desain setiap selesai fase.
+- Kanal statis yang dibangkitkan sekali membuat masalah menjadi bandit. Di sini state bergantung pada aksi dan waktu.
+- Reward sensing menghukum SCNR **di bawah** ambang.
+- `env.step` mengembalikan 5 nilai sesuai Gymnasium.
+- Faktor η = 4πσ_rcs/λ² wajib ada di SCNR (E6–E7); tanpa itu SNR radar meleset sekitar 32 dB.

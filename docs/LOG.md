@@ -4,6 +4,181 @@ Entri terbaru di atas. Setiap entri bertanggal dan menyebut fase/gate terkait.
 
 ---
 
+## 2026-11-11 (c) — Migrasi ke v0.2-lean; Gate 0 dan Gate 1 LOLOS, satu temuan terbuka
+
+Paket `ris-isac-drl` v0.2-lean diterima dan menggantikan v0.1. Migrasi dilakukan
+**di tempat** agar riwayat git dan kode `src/` yang masih berlaku tetap terpakai:
+`README.md`, `CLAUDE.md`, `docs/EXPERIMENT_DESIGN.md`, `docs/TASKS.md`,
+`configs/base.yaml`, `.gitignore` diganti; `scripts/link_budget.py` ditambahkan;
+`configs/e1_depth6.yaml` dan `envs/requirements-v019.txt` dihapus;
+`envs/requirements-main.txt` menjadi `envs/requirements.txt`.
+
+Perubahan yang paling berpengaruh: **M = 64 tetap** (bukan sapuan sampai 256) dan
+**tanpa environment Sionna 0.19.2**. Keduanya melarutkan sebagian besar tekanan
+VRAM yang dibahas sebelumnya, karena beban terberat dulu ada di M = 256
+per-elemen.
+
+### Dua bug v0.1 yang terbawa ke paket baru
+
+1. **Notasi eksponen YAML.** `base.yaml` v0.2 kembali memakai `3.5e9`, `20.0e6`,
+   `1.0e5`, `1.0e6` tanpa tanda, sehingga ter-parse sebagai **string**. Guard di
+   `config.py` (warisan v0.1) menangkapnya saat skrip pertama dijalankan. Semua
+   diubah ke bentuk bertanda; nilainya tidak berubah.
+2. **Hamburan difus mati.** `ITURadioMaterial` memakai default
+   `scattering_coefficient = 0,0`, sehingga `ray_tracing.diffuse_reflection: true`
+   dan §4.2 ("spekular + difus + difraksi") tidak berefek apa pun. Ditetapkan
+   S = 0,3 untuk beton, sesuai keputusan yang sudah disetujui sebelumnya.
+
+Selain itu `scene.synthetic_l` (geometri scene) tidak ada di config v0.2 dan
+ditambahkan, serta `ray_tracing.max_num_paths_per_src` yang dibutuhkan
+`rt_extract.py`.
+
+### Gate 0 — LOLOS (23 PASS, 0 WARN, 0 FAIL)
+
+`scripts/check_env.py` ditulis ulang untuk environment tunggal (versi lama
+berisi 376 baris logika dua-environment yang tidak berlaku lagi).
+
+| | |
+|---|---|
+| Python | 3.12.16 |
+| sionna / sionna-rt | 2.2.0 |
+| drjit / mitsuba | 1.5.0 / 3.9.1 |
+| torch | 2.14.1+cu130 |
+| GPU | RTX 4070, **VRAM bebas 10,85 GiB dari 11,99 GiB** |
+| Backend Dr.Jit | CUDA |
+| Varian Mitsuba | `cuda_ad_mono_polarized` |
+| Muat scene munich | 11 objek, 0,66 s |
+| Jalur 1 Tx-Rx | 9 jalur, 0,05 s |
+
+### Fase 1 — geometri ditentukan dengan pengukuran, bukan pilihan tangan
+
+§2.1 meminta tiga hal yang saling tarik: BS-RIS ~ 20 m, ROI 10-30 m dari RIS,
+dan 0% LoS BS->ROI. Bayangan sudut gedung baru menutupi seluruh lebar jalan B
+bila BS cukup jauh ke barat:
+
+    u >= 2a/(s-1),  a = setengah lebar jalan,
+    s = (y_dekat - y_BS)/(a - y_BS),  u = jarak BS di barat tepi blok.
+
+Karena d(BS-RIS) ~ sqrt((2a+u)^2 + dy^2), lebar jalan adalah parameter yang
+mendamaikan ketiganya — dan §2.2 tidak menetapkannya. Disapu dengan
+`scripts/place_geometry.py` (oracle LoS `ray_test` pada scene sebenarnya):
+
+| lebar jalan | d(BS-RIS) minimum dengan 0% LoS |
+|---|---|
+| **10 m** | **19,7 m** |
+| 12 m | 24,8 m |
+| 14 m | 30,2 m |
+| 16 m | 36,4 m |
+| 20 m | 50,6 m |
+
+Jalan 20 m memaksa BS 50,6 m dari RIS; jalan 10 m memberi 19,7 m, yaitu "~20 m"
+yang diminta §2.1. Dipilih **10 m** (2 lajur 3 m + trotoar 2 m).
+
+Catatan metodologis: pencarian pertama memakai grid 1,0 m dan memberi
+d = 18,7 m, tetapi pada grid E1 yang 0,5 m masih tersisa 1 titik ber-LoS dari
+640. Pencarian diulang pada 0,5 m; koordinat final memakai grid yang sama
+dengan gate-nya.
+
+Koordinat final: BS `[-11, -3, 10]`, RIS `[4.9, 8, 6]`, normal
+`[-0.936, 0.353, -0.010]` (BS dan pusat ROI masing-masing 56,3 deg dari normal),
+ROI `x in [-4, 4]`, `y in [18, 38]`, grid 0,5 m = 640 titik.
+
+### Anggaran jalur dan VRAM — batch BUKAN tuas untuk buffer ini
+
+`max_num_paths_per_src = 1e6` gagal OOM dengan alokasi **tepat 1 GiB**, dan
+angka itu **tidak berubah** saat `rx_batch_size` diturunkan 256 -> 64. Buffer
+image-method berukuran `max_num_paths_per_src * jumlah_sumber * 16 B`
+(1e6 x 64 x 16 = 1,07e9), dan ada beberapa buffer sekaligus.
+
+Ini mengoreksi perkiraan sebelumnya bahwa VRAM hanya menukar waktu lewat batch:
+untuk buffer ini batch tidak berpengaruh sama sekali. Dipakai 1e5 (102 MiB per
+buffer). `release_gpu_memory()` ditambahkan di `rt_extract.py` dan dipanggil
+antar-pemanggilan RT.
+
+**Masih terbuka:** konvergensi `max_num_paths_per_src` belum diuji pada geometri
+baru. Pada v0.1 nilai terlalu rendah menjatuhkan daya 28 dB tanpa error apa pun.
+Uji ini dijadwalkan Fase 2 bersama uji `samples_per_src` (< 0,5 dB).
+
+### Gate 1 — LOLOS
+
+Hasil di `results/e1/8728d05f8051/`. eta = 32,3 dB (cocok §3.4), L = 4096,
+Gamma = 13 dB, M = 64. `scripts/link_budget.py` direproduksi terhadap tabel
+§3.8 (20 m / 64 / 10 m: 46,4 dan 37,3 dB vs 46 dan 37 di dokumen).
+
+| Kriteria | Hasil |
+|---|---|
+| BS->RIS LoS | PASS (True) |
+| BS->ROI NLoS di 100% titik | PASS (fraksi 0,0000) |
+| P=30 dBm: SNR komunikasi lewat RIS > 10 dB di >= 90% | PASS (**1,000**) |
+| P=30 dBm: SNR radar ideal >= Gamma+3 di >= 80% | PASS (**1,000**) |
+| Oracle LoS setara PathSolver(depth=0) | PASS (0/64) |
+
+Median pada 30 dBm: SNR komunikasi 48,0 dB, SCNR 46,9 dB. Waktu seluruh E1
+di bawah 10 detik.
+
+### TEMUAN TERBUKA — RIS nyaris tidak diperlukan di geometri ini
+
+Gate 1 lolos, tetapi **tidak satu pun kriterianya membandingkan RIS terhadap
+jalur langsung**. Pemisahan kontribusi
+(`results/e1/8728d05f8051/e1_split_diagnostic.py`):
+
+| Komunikasi (SNR dB) | p10 | median | p90 |
+|---|---|---|---|
+| langsung (MRT) | 49,8 | **53,3** | 61,9 |
+| langsung (precoder a-bar) | 33,9 | 43,7 | 52,7 |
+| RIS saja (kaskade) | 42,7 | **46,6** | 50,2 |
+
+Penguatan RIS atas jalur langsung hanya **+2,1 dB median**, p10 **-4,4 dB**, dan
+di **38,4% titik jalur langsung lebih kuat**.
+
+| SCNR ideal (dB) | p10 | median | p90 |
+|---|---|---|---|
+| langsung saja | 28,9 | 42,8 | 58,5 |
+| RIS saja | 29,7 | 37,6 | 44,9 |
+| gabungan (dipakai E1) | 37,2 | 47,0 | 60,4 |
+
+Yang paling menohok: **kriteria radar Gate 1 terpenuhi di 99,5% ROI oleh jalur
+langsung saja**, tanpa RIS sama sekali.
+
+Penyebabnya struktural, bukan bug. §3.8 mendorong BS-RIS ke ~20 m agar link
+budget sensing (empat hop) memadai; tetapi dengan jalan 10 m, BS 19,7 m dari RIS
+berarti BS duduk tepat di mulut persimpangan, sehingga jalur multi-pantul kanyon
+ke ROI tetap kuat meski ROI lolos uji LoS. ROI di sini **tanpa garis pandang,
+tetapi tidak kekurangan daya** — persis kelas masalah yang ditemukan di v0.1,
+kali ini diperkuat oleh jalan sempit dan jarak pendek.
+
+Ada ketegangan tiga arah: SNR radar menuntut BS **dekat**, premis NLoS menuntut
+BS **jauh**, dan Gate 1 menuntut keduanya. Margin yang tersedia besar — SCNR
+median 47 dB terhadap ambang 16 dB — sehingga menjauhkan BS mungkin masih
+muat, tetapi harus diukur: eko turun 40 log10(d1), jadi 20 -> 50 m memakan
+sekitar 16 dB dan p10 RIS-saja (29,7 dB) akan mendekati ambang.
+
+**Menunggu keputusan** (titik keputusan akhir minggu 1 di `docs/TASKS.md`):
+
+* (a) Terima dan ubah pembingkaian paper menjadi "RIS menambah ~2 dB". Lemah:
+  dengan jalur langsung menang di 38,4% titik, daya ungkit aksi agen kecil dan
+  nilai DRL-nya dipertanyakan.
+* (b) Jauhkan BS (jalan lebih lebar, mis. 16-20 m sehingga BS 36-51 m dari RIS).
+  Memulihkan premis NLoS; harus dicek ulang terhadap kriteria radar Gate 1.
+* (c) Tambahkan kriteria "penguatan RIS atas jalur langsung" ke Gate 1 agar
+  kegagalan premis tidak lolos diam-diam lagi, apa pun pilihan (a)/(b).
+
+Rekomendasi: (c) wajib, lalu (b) diukur sebelum memilih (a).
+
+### Lain-lain
+
+* `src/risisac/system/signal_model.py` dibuat: `eta_factor` (E6),
+  `focus_phases`, `cascaded_coefficient`, `ideal_scnr` (E7 dengan rho = 1 tanpa
+  clutter). eta terukur 32,3 dB, cocok dengan §3.4.
+* Varian scene **ruang bebas** ditambahkan (`load_free_space`,
+  `load_scene_from_config`) untuk E0 Fase 2; terverifikasi memuat 0 objek.
+* Fasad berundak v0.1 dimatikan (setback dan variasi tinggi = 0) agar sesuai
+  §2.2 "gedung kotak"; pada v0.1 terbukti tidak berpengaruh setelah kedalaman
+  konvergen.
+* `pytest -q`: **24 lolos**.
+
+---
+
 ## 2026-11-11 (b) — Hamburan difus ternyata mati; premis ROI sebagian besar pulih
 
 Lanjutan entri 2026-11-11 (a). Tiga keputusan disetujui: (A) `max_depth` 5,

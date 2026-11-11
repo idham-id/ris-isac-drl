@@ -177,3 +177,41 @@ def plot_f2_coverage(grid_xy, snr_direct_db, snr_ris_db, out_path: str | Path,
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     return out_path
+
+
+def plot_f2_radar(grid_xy, scnr_db, out_path: str | Path,
+                  threshold_db: float, p_max_dbm: float,
+                  m_elements: int) -> Path:
+    """F2b — peta SNR radar ideal di ROI (E7, rho = 1, tanpa clutter).
+
+    Titik tengah skala diverging diletakkan tepat di ``threshold_db`` sehingga
+    batas Gate 1 terbaca langsung dari warnanya.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    x, y = grid_xy[:, 0], grid_xy[:, 1]
+    xs, ys = np.unique(x), np.unique(y)
+    g = np.full((len(ys), len(xs)), np.nan)
+    g[np.searchsorted(ys, y), np.searchsorted(xs, x)] = scnr_db
+
+    finite = g[np.isfinite(g)]
+    span = max(abs(float(np.percentile(finite, 1)) - threshold_db),
+               abs(float(np.percentile(finite, 99)) - threshold_db), 1.0)
+
+    fig, ax = plt.subplots(figsize=(5.2, 4.4), constrained_layout=True)
+    im = ax.pcolormesh(xs, ys, g, cmap="RdBu_r", shading="nearest",
+                       vmin=threshold_db - span, vmax=threshold_db + span)
+    ax.contour(xs, ys, g, levels=[threshold_db], colors="k", linewidths=1.2)
+    _style_axes(ax)
+    ax.set_aspect("equal")
+    ax.set_xlabel("x (m)")
+    ax.set_ylabel("y (m)")
+    ax.set_title(f"SNR radar ideal, M = {m_elements}, "
+                 rf"$P_{{\max}}$ = {p_max_dbm:.0f} dBm")
+    cb = fig.colorbar(im, ax=ax)
+    cb.set_label("SCNR (dB)")
+    cb.ax.axhline(threshold_db, color="k", linewidth=1.2)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path

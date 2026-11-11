@@ -1,128 +1,130 @@
-# Rencana Implementasi Bertahap
+# Rencana Implementasi 8 Minggu (Versi Ramping)
 
-Kerjakan fase secara berurutan. **Jangan lanjut ke fase berikutnya sebelum gate fase saat ini lolos.** Jika gate gagal, catat penyebab di `docs/LOG.md`, ajukan perbaikan, dan minta persetujuan sebelum mengubah asumsi fisik di `docs/EXPERIMENT_DESIGN.md`.
+Kerjakan fase berurutan. **Jangan lanjut sebelum gate lolos.** Jika gate gagal, catat penyebab di `docs/LOG.md`, ajukan perbaikan, dan minta persetujuan sebelum mengubah asumsi fisik di `docs/EXPERIMENT_DESIGN.md`.
 
-Rujukan persamaan (E1–E9) dan bagian (§) mengacu ke `docs/EXPERIMENT_DESIGN.md`.
+Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESIGN.md`.
+
+## Jadwal ringkas
+
+| Minggu | Fase | Hasil | Menulis paralel |
+|---|---|---|---|
+| 1 | 0, 1 | Lingkungan siap, scene L, peta cakupan (E1) | Kerangka paper, related work |
+| 2 | 2 | Basis data kanal, validasi E0 | — |
+| 3 | 3 | Model sinyal, baseline, uji kelayakan oracle | Bagian model sistem |
+| 4 | 4 + awal 5 | Environment RL, uji asap PPO | Bagian formulasi MDP |
+| 5 | 5 | 15 run pelatihan (jalan malam hari) | — |
+| 6 | 6 | Evaluasi E3, E4, E5, E6 | Bagian metode dan baseline |
+| 7 | 7 | Gambar/tabel final, cek konsistensi | Hasil dan diskusi |
+| 8 | — | Cadangan waktu, review internal, kirim | Abstrak, kesimpulan, revisi |
+
+**Titik keputusan:**
+- **Akhir minggu 1 (Gate 1):** jika SNR radar ideal tidak memenuhi, ubah geometri sebelum ray tracing massal.
+- **Akhir minggu 3 (Gate 3):** jika Oracle-GD pun gagal memenuhi Γ, ubah L, Γ, atau geometri. Jangan lanjut ke RL.
+- **Pertengahan minggu 5 (Gate 5):** jika PPO-PO belum mengalahkan Geometric pada val, terapkan mitigasi §10. Jika sampai akhir minggu 5 tetap gagal, diskusikan pembingkaian ulang sebelum evaluasi penuh.
+- **Tiap akhir minggu:** jika terlambat, potong P3 dulu, lalu P2.
 
 ---
 
-## Fase 0 — Setup lingkungan
+## Fase 0 — Setup (minggu 1, 1–2 hari)
 
-- [ ] Buat `pyproject.toml` dengan paket `risisac` (layout `src/`), Python 3.11 atau 3.12.
-- [ ] Environment utama (`envs/requirements-main.txt`): sionna-rt versi terbaru, numpy, scipy, h5py, pyyaml, gymnasium, torch, stable-baselines3, sb3-contrib, matplotlib, pandas, pytest. Kunci versi persis setelah instalasi berhasil.
-- [ ] Environment validasi terpisah (`envs/requirements-v019.txt`): sionna==0.19.2 dan versi TensorFlow yang didukungnya (cek dokumentasi Sionna 0.19.2). Hanya untuk E0.
-- [ ] Skrip `scripts/check_env.py`: cetak versi paket, deteksi GPU (Dr.Jit backend CUDA/LLVM dan PyTorch CUDA), muat satu scene bawaan, hitung jalur satu Tx–Rx.
-- [ ] Buat `docs/LOG.md` untuk catatan keputusan dan masalah.
+- [ ] `pyproject.toml`, paket `risisac` (layout `src/`), Python 3.11/3.12.
+- [ ] `envs/requirements.txt`: sionna-rt terbaru, numpy, scipy, h5py, pyyaml, gymnasium, torch, stable-baselines3, pandas, pyarrow, matplotlib, pytest. Kunci versi persis setelah instalasi berhasil.
+- [ ] `scripts/check_env.py`: cetak versi, varian Dr.Jit yang aktif (CUDA/LLVM), VRAM bebas, muat satu scene bawaan, hitung jalur satu Tx–Rx.
+- [ ] Buat `docs/LOG.md`.
 
-**Gate 0:** `check_env.py` berjalan di kedua environment tanpa error; versi tercatat di `docs/LOG.md`.
+**Gate 0:** `check_env.py` berjalan tanpa error; versi dan VRAM tercatat di `docs/LOG.md`.
 
 ---
 
-## Fase 1 — Scene, penempatan, dan kelayakan link (E1)
+## Fase 1 — Scene dan kelayakan (minggu 1)
 
-- [ ] `src/risisac/scene/synthetic_l.py`: bangun scene berbentuk L (dua jalan tegak lurus, gedung kotak beton) sebagai mesh + XML Mitsuba yang bisa dimuat Sionna RT.
-- [ ] `src/risisac/scene/placement.py`: definisikan posisi BS, RIS (posisi, orientasi normal), ROI, lajur target, dan trotoar dari config.
-- [ ] Fungsi cek visibilitas LoS (jalur kedalaman 0) untuk: BS→RIS (harus LoS), BS→setiap titik ROI (harus NLoS), RIS→titik ROI (catat persentase LoS).
-- [ ] `src/risisac/channels/geometry.py`: posisi elemen RIS dalam koordinat dunia, vektor steering gelombang sferis ke titik sembarang, profil fasa fokus.
-- [ ] Hitung peta daya di grid ROI (jarak 0,5 m): (a) BS langsung, (b) lewat RIS dengan profil fokus ke tiap titik grid (gain koheren terbaik per titik), untuk M ∈ {64, 144, 256} dan P_max ∈ {20, 30, 40} dBm.
-- [ ] Gambar F1 (tata letak) dan F2 (peta cakupan).
+- [ ] `src/risisac/scene/synthetic_l.py`: scene berbentuk L (dua jalan tegak lurus, gedung kotak beton, tanah) sebagai mesh + XML Mitsuba. Juga varian **ruang bebas** (tanpa objek) untuk E0.
+- [ ] `src/risisac/scene/placement.py`: posisi BS, RIS (posisi + normal), ROI, lajur target, trotoar dari config. BS–RIS ≈ 20 m, ROI 10–30 m dari RIS.
+- [ ] Cek LoS otomatis: BS→RIS harus LoS; BS→semua titik grid ROI harus NLoS; catat persentase LoS RIS→ROI.
+- [ ] `src/risisac/channels/geometry.py`: posisi elemen RIS di koordinat dunia, steering gelombang sferis, profil fasa fokus.
+- [ ] E1: di grid ROI (0,5 m), hitung SNR komunikasi dan SNR radar ideal (E7 dengan ρ = 1, tanpa clutter, profil fokus terbaik per titik) untuk P_max ∈ {20, 30, 40} dBm. Gambar F1 dan F2.
 
 **Gate 1:**
-- BS→RIS LoS; tidak ada LoS BS→ROI di 100% titik grid ROI.
-- Dengan M = 144 dan P_max = 30 dBm, SNR lewat RIS > 0 dB di ≥ 80% titik ROI.
-- Jika gagal: geser RIS, ubah orientasi, atau naikkan M default. Catat keputusan.
+- BS→RIS LoS dan 0% titik ROI LoS dari BS.
+- Pada P_max = 30 dBm: SNR komunikasi lewat RIS > 10 dB di ≥ 90% ROI, dan SNR radar ideal ≥ Γ + 3 dB di ≥ 80% ROI.
+- Jika gagal: pendekkan ROI atau jarak BS–RIS, atau naikkan L. Catat keputusan.
 
 ---
 
-## Fase 2 — Ekstraksi kanal dan basis data (§4)
+## Fase 2 — Basis data kanal dan E0 (minggu 2)
 
-- [ ] `src/risisac/mobility/trajectories.py`: pembangkit lintasan target (lajur, kecepatan 1–10 m/s) dan pengguna (random waypoint di trotoar), dengan split train/val/test dari seed terpisah.
-- [ ] `src/risisac/channels/rt_extract.py`: hitung **G**, **H**, **H**_c (tanpa jalur LoS tx–rx), dan per titik lintasan **g**_k, **g**_t, **h**_{d,k}, **h**_{d,t}, **h**^{(r)}_{d,t}. RIS sebagai array planar M elemen tanpa mesh. Mendukung batch penerima dan mode per-elemen vs synthetic array.
-- [ ] `src/risisac/channels/database.py`: tulis/baca HDF5 sesuai skema §4.3, termasuk metadata dan hash config.
-- [ ] `scripts/precompute_channels.py --config ... --split ...` yang bisa dilanjutkan bila terputus.
-- [ ] Tes unit:
-  - bentuk dan dtype semua array, tanpa NaN/Inf;
-  - resiprositas: menukar peran tx/rx untuk beberapa link memberi koefisien yang sama (toleransi kecil relatif);
-  - **h**_{d,t} di ROI jauh lebih lemah daripada jalur lewat RIS dengan profil fokus;
-  - determinisme: dua kali prakomputasi dengan seed sama menghasilkan file identik (atau selisih di bawah toleransi numerik).
+- [ ] `src/risisac/mobility/trajectories.py`: lintasan target (lajur, kecepatan diacak 1–10 m/s) dan pengguna (random waypoint), split 200/30/50 dengan seed terpisah.
+- [ ] `src/risisac/channels/rt_extract.py`: hitung **G**, **H**, **H**_c (buang LoS tx–rx), dan per titik **g**_k, **g**_t, **h**_{d,k}, **h**_{d,t}, **h**^{(r)}_{d,t}. RIS sebagai array planar tanpa mesh. Batch penerima; mode per elemen dan synthetic array.
+- [ ] `src/risisac/channels/database.py`: HDF5 sesuai §4.4.
+- [ ] `scripts/precompute_channels.py --config ... --split ...`: bisa dilanjutkan bila terputus; catat waktu dan puncak VRAM.
+- [ ] Atur `samples_per_src` sampai daya di 20 titik uji berubah < 0,5 dB terhadap nilai 2× lipat.
+- [ ] E0 (§4.5): uji implementasi vs analitik ruang bebas, kalibrasi terhadap model path loss RIS literatur, per elemen vs synthetic array. Gambar F3, Tabel T1.
+- [ ] Tes unit: bentuk/dtype, tanpa NaN/Inf; resiprositas beberapa link; kanal langsung BS di ROI jauh lebih lemah daripada jalur RIS terfokus; determinisme dengan seed sama.
 
-**Gate 2:** semua tes lulus; waktu prakomputasi per titik lintasan tercatat; ukuran basis data wajar.
+**Gate 2:** semua tes lulus; uji implementasi E0 < 0,1 dB; `calibration_db` tercatat; prakomputasi lengkap untuk ketiga split.
 
 ---
 
-## Fase 3 — Validasi terhadap Sionna 0.19.2 (E0)
+## Fase 3 — Model sinyal, tracker, baseline (minggu 3)
 
-- [ ] `scripts/validate_v019.py` (dijalankan di env validasi): bangun scene yang sama, pasang RIS 0.19.2 dengan profil fasa yang diekspor dari env utama, hitung daya terima di grid ROI.
-- [ ] `src/risisac/channels/validate_compare.py` (env utama): bandingkan dengan hasil hibrida untuk 4 profil fasa; hitung faktor kalibrasi konstan.
-- [ ] Bandingkan juga mode per-elemen vs synthetic array.
-- [ ] Gambar F3, Tabel T1.
-
-**Gate 3:** selisih median ≤ 2 dB dan P90 ≤ 4 dB di area yang diterangi RIS (setelah kalibrasi konstan). Jika gagal, telusuri pola elemen, orientasi, dan konvensi fasa sebelum lanjut. Ambang ini adalah usulan awal; jika diubah, catat alasannya.
-
----
-
-## Fase 4 — Model sinyal dan baseline
-
-- [ ] `src/risisac/system/signal_model.py`: (E1)–(E7) secara terbatch (NumPy dan versi PyTorch untuk oracle). Setiap fungsi mencantumkan nomor persamaan di docstring.
+- [ ] `src/risisac/system/signal_model.py`: (E1)–(E7) terbatch, versi NumPy dan PyTorch. Docstring mencantumkan nomor persamaan.
 - [ ] `src/risisac/system/precoding.py`: RZF, beam sensing dari estimasi posisi, normalisasi daya.
-- [ ] `src/risisac/system/ris.py`: pembaruan fasa inkremental/absolut, kuantisasi b-bit.
-- [ ] `src/risisac/tracking/kalman.py`: filter Kalman kecepatan-konstan 2D dan model galat pengukuran (§5.2).
-- [ ] `src/risisac/baselines/`: `random_policy.py` (B1), `geometric.py` (B2), `oracle_gd.py` (B3, B4, B5).
+- [ ] `src/risisac/system/ris.py`: pembaruan fasa inkremental/absolut.
+- [ ] `src/risisac/tracking/kalman.py`: Kalman kecepatan-konstan 2D + model galat pengukuran §5.2.
+- [ ] `src/risisac/baselines/`: `random_policy.py` (B1), `geometric.py` (B2), `oracle_gd.py` (B3, B4).
 - [ ] Tes unit:
-  - SCNR (E7) dengan MVDR bentuk tertutup sama dengan maksimum numerik u^H A u / u^H R u (eigen umum) untuk kanal acak;
-  - SINR (E3) sama dengan perhitungan langsung dari simulasi Monte Carlo simbol;
-  - tr(**R**_x) ≤ P_max selalu terpenuhi;
-  - |e^{jφ}| = 1 dan kuantisasi menghasilkan tepat 2^b level.
-- [ ] **Uji kelayakan:** jalankan B3 pada 200 snapshot val; catat persentase snapshot yang memenuhi SCNR ≥ Γ.
+  - SCNR (E7) bentuk tertutup = maksimum eigen umum numerik;
+  - SINR (E3) = simulasi Monte Carlo simbol;
+  - tr(**R**_x) ≤ P_max selalu;
+  - faktor η (E6) cocok dengan persamaan radar bistatik ruang bebas untuk satu konfigurasi sederhana.
+- [ ] Uji kelayakan: B3 pada 200 snapshot val; pilih grid ω dan ρ untuk B1/B2 di val.
 
-**Gate 4:** semua tes lulus; B3 memenuhi SCNR ≥ Γ pada ≥ 90% snapshot val dengan parameter default, dan B3 jelas lebih baik daripada B1. Jika tidak, sesuaikan Γ, L, atau σ_rcs (catat alasannya) sebelum lanjut.
+**Gate 3:** semua tes lulus; B3 memenuhi SCNR ≥ Γ pada ≥ 90% snapshot val dan jelas mengungguli B1.
 
 ---
 
-## Fase 5 — Environment RL (§5)
+## Fase 4 — Environment RL (minggu 4)
 
-- [ ] `src/risisac/env/ris_isac_env.py`: kelas Gymnasium `RisIsacEnv` dengan API 5-tuple (`obs, reward, terminated, truncated, info`), `reset(seed=...)`, mode observasi `partial` / `full`, mode aksi `model_informed` / `direct_w`, mode reward `hinge` / `indicator` / `lagrangian`.
-- [ ] `info` memuat: rate per pengguna, rate minimum, SCNR per target, flag deteksi, galat posisi tracker, ρ, komponen reward.
-- [ ] Pembungkus vektor (SubprocVecEnv) dan normalisasi observasi.
-- [ ] Tes:
-  - `gymnasium.utils.env_checker.check_env` lulus;
-  - seed sama → trajektori identik;
-  - reward sama dengan perhitungan ulang dari `info` dan (E9);
-  - kebijakan B2 yang dijalankan lewat env memberi hasil sama dengan B2 langsung.
+- [ ] `src/risisac/env/ris_isac_env.py`: `RisIsacEnv` Gymnasium, API 5-tuple, `reset(seed=...)`, mode observasi `partial`/`full`, mode fasa `incremental`/`absolute`, P_max dan kecepatan diacak di train.
+- [ ] `info`: rate per pengguna, rate minimum, SCNR, flag deteksi, galat tracker, ρ, komponen reward.
+- [ ] `SubprocVecEnv` (8 env) + `VecNormalize` (observasi saja; reward tidak dinormalisasi agar mudah ditafsirkan) + frame-stack 4.
+- [ ] Tes: `gymnasium.utils.env_checker.check_env` lulus; seed sama → trajektori identik; reward = (E9) dihitung ulang dari `info`; kebijakan B2 lewat env = B2 langsung.
 - [ ] Benchmark kecepatan langkah.
+- [ ] Uji asap: PPO-PO 100 ribu langkah harus mengalahkan B1 di val.
 
-**Gate 5:** semua tes lulus; ≥ 2.000 langkah/detik per proses untuk konfigurasi default (target awal, sesuaikan bila perangkat keras berbeda).
+**Gate 4:** semua tes lulus; uji asap lolos; laju ≥ 1.000 langkah/detik per proses.
 
 ---
 
-## Fase 6 — Pelatihan (E2)
+## Fase 5 — Pelatihan E2 dan E4b (minggu 5)
 
-- [ ] `src/risisac/train/train.py --config ... --method ... --seed ...`: membaca config, menyimpan model, log TensorBoard/CSV, checkpoint, dan evaluasi berkala di set val.
-- [ ] Uji asap: PPO-PO 100 ribu langkah pada scene sintetis harus mengalahkan B1.
-- [ ] Latih M1–M4 dengan 5 seed; kemudian M5, M6.
+- [ ] `src/risisac/train/train.py --config ... --method {ppo_po, ppo_full} --seed ...`: simpan model, `VecNormalize`, log CSV/TensorBoard, checkpoint, evaluasi val setiap 50 ribu langkah.
+- [ ] `scripts/run_all_training.sh`: antrean 15 run (M1, M2, A1 × 3 seed; M1 Γ = 10 dan 16 × 3 seed), bisa dilanjutkan. Jalankan di CPU, 2–3 run paralel sesuai jumlah core.
 - [ ] Gambar F4.
 
-**Gate 6:** M1 konvergen (reward val tidak naik > 2% dalam 20% langkah terakhir) dan mengalahkan B1 serta B2 pada set val. Jika tidak mengalahkan B2, lakukan diagnosis (normalisasi, κ, inisialisasi, kurikulum) sebelum menjalankan sapuan.
+**Gate 5:** M1 konvergen (reward val naik < 2% dalam 20% langkah terakhir) dan mengalahkan B1 serta B2 di val. Jika gagal di pertengahan minggu, terapkan mitigasi §10: inisialisasi dari B2, kurikulum target diam → bergerak, κ lebih kecil.
 
 ---
 
-## Fase 7 — Evaluasi dan sapuan (E3–E7)
+## Fase 6 — Evaluasi (minggu 6)
 
-- [ ] `src/risisac/eval/evaluate.py`: jalankan semua metode di set test dengan seed tetap; simpan hasil per langkah ke Parquet.
+- [ ] `src/risisac/eval/evaluate.py`: semua metode di 150 episode test (50 lintasan × 3 seed noise), seed tetap; hasil per langkah ke Parquet.
 - [ ] `src/risisac/eval/metrics.py`: rate minimum, pemenuhan SCNR, durasi track, galat tracker, CI bootstrap, Welch t-test.
-- [ ] `src/risisac/eval/plots.py`: F5–F9 dari file hasil.
-- [ ] `scripts/run_sweep.py` untuk E4 dan E5; ablasi E6; pengukuran waktu E7.
-- [ ] Tabel T2–T4 sebagai CSV dan LaTeX.
+- [ ] E3 (P1) → T2, F5, F6.
+- [ ] E4b (P1): evaluasi semua metode pada Γ = 10, 13, 16 → F8.
+- [ ] E4a (P2): P_max dan kelompok kecepatan → F7.
+- [ ] E5, E6 (P2) → T3.
+- [ ] E7, E8 (P3) hanya jika masih ada waktu.
 
-**Gate 7:** semua gambar dan tabel bisa dibuat ulang dari `results/` dengan satu perintah.
+**Gate 6:** T2, F5, F6, F8 lengkap.
 
 ---
 
-## Fase 8 — Reproduksibilitas dan konsistensi paper–kode
+## Fase 7 — Finalisasi (minggu 7)
 
-- [ ] `scripts/print_param_table.py`: cetak tabel parameter dari config dalam format LaTeX untuk paper.
-- [ ] Cek silang: setiap persamaan di paper ↔ fungsi di kode ↔ tes unit.
-- [ ] README berisi langkah reproduksi lengkap dari instalasi sampai gambar.
-- [ ] Opsional: scene utama kedua atau scene OSM untuk uji generalisasi.
+- [ ] `src/risisac/eval/plots.py` dan `scripts/make_figures.py`: semua gambar dan tabel dari `results/` dengan satu perintah; ekspor PDF vektor dan tabel LaTeX.
+- [ ] `scripts/print_param_table.py`: tabel parameter LaTeX dari config.
+- [ ] Cek silang: tiap persamaan paper ↔ fungsi kode ↔ tes unit. Catat di `docs/LOG.md`.
+- [ ] README: langkah reproduksi dari instalasi sampai gambar.
 
-**Gate 8:** orang lain bisa mereproduksi T2 dari repo bersih mengikuti README.
+**Gate 7:** semua gambar dan tabel dibuat ulang dari repo bersih dengan satu perintah.

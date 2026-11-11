@@ -267,3 +267,41 @@ def load_synthetic_l(spec: SyntheticLSpec, merge_shapes: bool = True):
     import sionna.rt as rt
 
     return rt.load_scene_from_string(build_xml(spec), merge_shapes=merge_shapes)
+
+
+# ---------------------------------------------------------------- ruang bebas
+def build_free_space_xml() -> str:
+    """Scene tanpa objek apa pun: hanya jalur LoS.
+
+    Dipakai E0 (§4.5) sebagai pembanding terhadap model analitik, di mana
+    satu-satunya jalur yang ada harus jalur langsung. Tanpa tanah, karena
+    pantulan tanah akan menambah jalur kedua dan merusak pembandingan.
+    """
+    return '<scene version="2.1.0">\n</scene>\n'
+
+
+def load_free_space(merge_shapes: bool = True):
+    """Muat scene ruang bebas sebagai ``sionna.rt.Scene`` (E0, §4.5)."""
+    import sionna.rt as rt
+
+    return rt.load_scene_from_string(build_free_space_xml(),
+                                     merge_shapes=merge_shapes)
+
+
+def load_scene_from_config(cfg: dict, merge_shapes: bool = True):
+    """Muat scene sesuai ``cfg['scene']['id']``.
+
+    ``synthetic_l`` | ``free_space`` | nama scene bawaan Sionna (opsional E8).
+    """
+    scene_id = str(cfg["scene"]["id"])
+    if scene_id == "synthetic_l":
+        scene = load_synthetic_l(SyntheticLSpec.from_config(cfg),
+                                 merge_shapes=merge_shapes)
+    elif scene_id == "free_space":
+        scene = load_free_space(merge_shapes=merge_shapes)
+    else:
+        import sionna.rt as rt
+        scene = rt.load_scene(getattr(rt.scene, scene_id),
+                              merge_shapes=merge_shapes)
+    scene.frequency = float(cfg["radio"]["carrier_frequency_hz"])
+    return scene

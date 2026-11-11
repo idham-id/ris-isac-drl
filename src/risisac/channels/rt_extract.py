@@ -34,7 +34,9 @@ class RayTracingSettings:
         return cls(
             max_depth=int(r["max_depth"]),
             samples_per_src=int(r["samples_per_src"]),
-            max_num_paths_per_src=int(r["max_num_paths_per_src"]),
+            # Default Sionna 1e6. Nilai terlalu rendah MEMOTONG jalur dan
+            # membiaskan koefisien tanpa error apa pun (docs/LOG.md 2026-11-11).
+            max_num_paths_per_src=int(r.get("max_num_paths_per_src", 1_000_000)),
             specular_reflection=bool(r["specular_reflection"]),
             diffuse_reflection=bool(r["diffuse_reflection"]),
             diffraction=bool(r["diffraction"]),
@@ -56,6 +58,21 @@ class RayTracingSettings:
                "max_num_paths_per_src": min(self.max_num_paths_per_src, 50_000),
                "rx_batch_size": min(self.rx_batch_size, 128)},
         )
+
+
+def release_gpu_memory() -> None:
+    """Lepas cache alokasi Dr.Jit di antara pemanggilan ray tracing.
+
+    Buffer image-method berukuran max_num_paths_per_src * jumlah_sumber * 16 B
+    (M = 64 dengan 1e6 jalur = tepat 1 GiB) dan TIDAK mengecil bila
+    rx_batch_size diturunkan. Tanpa pelepasan ini, sisa cache dari pemanggilan
+    sebelumnya membuat alokasi berikutnya gagal meski VRAM total mencukupi.
+    """
+    try:
+        import drjit as dr
+        dr.flush_malloc_cache()
+    except Exception:       # backend CPU / versi lama: tidak ada yang dilepas
+        pass
 
 
 def _clear_devices(scene) -> None:

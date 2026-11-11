@@ -1,13 +1,13 @@
-# Environment utama: Sionna RT 2.x (Dr.Jit/Mitsuba) + PyTorch CUDA + stack RL.
-# Dikunci dari instalasi yang lolos Gate 0 pada 2026-11-10 (lihat docs/LOG.md).
+# Environment tunggal versi ramping: Sionna RT 2.x (Dr.Jit/Mitsuba) + PyTorch CUDA + stack RL.
+# Dikunci dari instalasi yang lolos Gate 0 (lihat docs/LOG.md).
 #
 # Python 3.12. Buat dan pasang dengan:
 #   conda create -n sionna-drl python=3.12 -y
-#   pip install -r envs/requirements-main.txt
+#   pip install -r envs/requirements.txt
 #
 # PENTING: torch HARUS datang dari index cu130. Tanpa --extra-index-url di bawah,
 # pip mengambil build CPU dari PyPI dan torch.cuda.is_available() akan False,
-# sehingga seluruh pelatihan DRL jatuh ke CPU tanpa peringatan apa pun.
+# sehingga seluruh pelatihan jatuh ke CPU tanpa peringatan apa pun.
 --extra-index-url https://download.pytorch.org/whl/cu130
 
 torch==2.14.1+cu130

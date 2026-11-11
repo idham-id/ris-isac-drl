@@ -1,17 +1,19 @@
-# Konfigurasi bawaan. Nilai mengikuti docs/EXPERIMENT_DESIGN.md §8.
-# Override eksperimen: buat file kecil berisi `defaults: [base]` lalu ubah kunci yang perlu.
+# Konfigurasi bawaan versi ramping. Nilai mengikuti docs/EXPERIMENT_DESIGN.md §8.
+# Override eksperimen: file kecil berisi `defaults: [base]` lalu ubah kunci yang perlu.
+#
+# NOTASI ANGKA: PyYAML memakai resolver YAML 1.1, yang hanya mengenali notasi
+# eksponen sebagai float bila TANDANYA eksplisit. `3.5e9` masuk sebagai str dan
+# baru meledak jauh dari penyebabnya; tulis `3.5e+9`. load_config() menolak
+# config yang melanggar ini.
 
 experiment:
   name: base
   seed: 0
 
 scene:
-  id: synthetic_l            # synthetic_l | <nama scene bawaan Sionna> | osm_<nama>
-
-  # Geometri scene sintetis berbentuk L (desain §2.2 baris "Pengembangan").
-  # Simpang berpusat di origin; jalan A memanjang ke -x, jalan B ke +y.
+  id: synthetic_l            # synthetic_l | free_space (E0) | <scene kota bawaan, opsional E8>
   synthetic_l:
-    street_width_m: 20.0
+    street_width_m: 10.0    # dipilih di Fase 1; lihat scripts/place_geometry.py
     block_extent_m: 80.0     # dari tepi jalan sampai tepi scene
     building_height_m: 20.0
     building_material: concrete
@@ -19,64 +21,46 @@ scene:
     material_thickness_m: 0.3
     # ITURadioMaterial Sionna 2.2 memakai default scattering_coefficient = 0,0,
     # sehingga ray_tracing.diffuse_reflection: true TIDAK berefek apa pun tanpa
-    # nilai eksplisit di sini. S = 0,3 untuk beton berada di tengah rentang
-    # terukur 0,2-0,6 untuk dinding gedung pada model effective roughness
-    # (Degli-Esposti dkk., IEEE TAP 2007 -- model yang diimplementasikan Sionna).
-    # Pola hamburan dibiarkan default Sionna (Lambertian): menulis
-    # scattering_pattern di XML justru error, karena RadioMaterial meneruskan
-    # tiap properti sisa sebagai kwarg ke factory pola (radio_material.py:164).
-    # Lihat docs/EXPERIMENT_DESIGN.md §4.2 dan docs/LOG.md 2026-11-11.
+    # nilai eksplisit di sini -- kode dan §4.2 ("spekular + difus + difraksi")
+    # tidak akan cocok. S = 0,3 untuk beton berada di tengah rentang terukur
+    # 0,2-0,6 untuk dinding gedung pada model effective roughness
+    # (Degli-Esposti dkk., IEEE TAP 2007, model yang diimplementasikan Sionna).
+    # Pola hamburan dibiarkan default Sionna (Lambertian).
     scattering_coefficient: 0.3
-    # Fasad bersegmen, untuk memecah keteraturan empat dinding rata sepanjang
-    # 80 m. CATATAN: ini TIDAK menyelesaikan masalah "kanal langsung terlalu
-    # kuat di ROI". Diukur ulang pada max_depth konvergen, median |h_d|^2 rata
-    # vs berundak adalah -89,2 vs -89,1 dB -- jalur kanyon multi-pantul itu
-    # propagasi asli, bukan artefak dinding rata.
-    # Lihat docs/LOG.md 2026-11-11 (Fase 1 revisi) butir 4.
-    # setback_m = 0 dan height_var_m = 0 mengembalikan blok kotak utuh.
-    facade:
-      depth_m: 12.0          # kedalaman strip fasad dari tepi jalan
-      segment_m: 10.0        # panjang nominal tiap segmen (acak 0,6-1,4x)
-      setback_m: 3.0         # setback maksimum tiap segmen
-      height_var_m: 6.0      # variasi tinggi tiap segmen
-      seed: 1
-
-  # Koordinat ditetapkan di Fase 1 (meter, sistem koordinat scene).
-  bs_position: [-60.0, -5.0, 10.0]   # di jalan A, sisi selatan, z = 10 m
-  bs_rx_offset: [0.0, 0.0, -0.5]     # panel terima relatif terhadap panel pancar
-  ris_position: [9.9, 12.0, 6.0]     # dinding barat blok NE, dekat sudut, z = 6 m
-  # Normal RIS membagi dua arah ke BS dan ke pusat ROI (masing-masing ~43,5°
-  # dari normal). Ditetapkan di Fase 1; lihat docs/LOG.md.
-  ris_normal: [-0.868, 0.493, -0.051]
-  roi:                       # area NLoS di jalan B, 10-60 m dari sudut simpang
-    polygon: [[-9.0, 20.0], [9.0, 20.0], [9.0, 70.0], [-9.0, 70.0]]
-    height: 1.5              # tinggi pengguna/target (m)
-    grid_spacing_m: 0.5      # jarak grid peta cakupan E1
-  target_lanes:              # daftar polyline lajur
-    - [[-3.0, 20.0], [-3.0, 70.0]]
-    - [[3.0, 20.0], [3.0, 70.0]]
-  sidewalks:                 # daftar poligon trotoar
-    - [[-9.0, 20.0], [-7.0, 20.0], [-7.0, 70.0], [-9.0, 70.0]]
-    - [[7.0, 20.0], [9.0, 20.0], [9.0, 70.0], [7.0, 70.0]]
+  # Koordinat ditetapkan di Fase 1 dengan scripts/place_geometry.py, yang
+  # mencari d(BS-RIS) terkecil yang masih memberi 0% LoS BS->ROI. Lebar jalan
+  # ikut dicari: bayangan sudut gedung menuntut u >= 2a/(s-1), sehingga jalan
+  # 20 m memaksa d(BS-RIS) = 50,6 m sedangkan jalan 10 m cukup 19,7 m -- yaitu
+  # "~20 m" yang diminta §2.1. Lihat docs/LOG.md 2026-11-11 (Fase 1 v0.2).
+  bs_position: [-11.0, -3.0, 10.0]   # jalan A, d(BS-RIS) = 19,7 m
+  bs_rx_offset: [0.0, 0.0, -0.5]
+  ris_position: [4.9, 8.0, 6.0]      # dinding barat blok NE, dekat sudut
+  # Normal = pembagi dua arah ke BS dan ke pusat ROI; keduanya 56,3 deg dari normal.
+  ris_normal: [-0.936, 0.353, -0.010]
+  roi:
+    distance_from_ris_m: [10.0, 30.0]   # diukur sepanjang jalan B dari RIS
+    polygon: [[-4.0, 18.0], [4.0, 18.0], [4.0, 38.0], [-4.0, 38.0]]
+    height: 1.5
+    grid_spacing_m: 0.5      # grid peta cakupan E1
+  target_lanes: [[[-2.5, 18.0], [-2.5, 38.0]], [[2.5, 18.0], [2.5, 38.0]]]
+  sidewalks: [[[-4.0, 18.0], [-2.0, 18.0], [-2.0, 38.0], [-4.0, 38.0]],
+              [[2.0, 18.0], [4.0, 18.0], [4.0, 38.0], [2.0, 38.0]]]
 
 radio:
-  # Tanda eksponen WAJIB eksplisit (3.5e+9, bukan 3.5e9): PyYAML memakai
-  # resolver YAML 1.1, yang hanya mengenali float bila tandanya ada. Tanpa
-  # tanda, nilainya masuk sebagai str dan baru meledak jauh di hilir.
   carrier_frequency_hz: 3.5e+9
   bandwidth_hz: 20.0e+6
   noise_figure_db: 7.0
-  p_max_dbm: 30.0
+  p_max_dbm: 30.0                    # nilai evaluasi utama
+  p_max_train_range_dbm: [20.0, 40.0] # diacak per episode saat pelatihan
   bs:
-    num_tx: 8                # ULA horizontal, jarak lambda/2
+    num_tx: 8
     num_rx: 8
     pattern: tr38901         # verifikasi nama pola di versi Sionna terpasang
   ris:
-    num_rows: 12             # M = num_rows * num_cols
-    num_cols: 12
+    num_rows: 8              # M = 64
+    num_cols: 8
     spacing_wavelengths: 0.5
-    element_pattern: cosine  # pendekatan pola reradiasi; ablasi: iso
-    phase_bits: null         # null = kontinu; 1 atau 2 untuk RIS diskret
+    element_pattern: cosine
     calibration_db: 0.0      # diisi dari hasil E0
   user:
     num_users: 2             # K
@@ -86,40 +70,39 @@ radio:
     rcs_m2: 1.0
 
 ray_tracing:
-  # Kedalaman DIUKUR, bukan dipilih (docs/LOG.md 2026-11-11, Fase 1 revisi).
-  # Pada depth 3 median |h_d|^2 di ROI meleset ~35 dB: jalur pembawa daya di
-  # kanyon NLoS justru berpantul 4-6 kali. Stabil pada 5-6 (sisa +-2 dB derau
-  # Monte Carlo). Menaikkan samples_per_src 1e6 -> 3e7 TIDAK memperbaikinya;
-  # kedalaman, bukan anggaran sampel, yang membatasi.
-  max_depth: 5
+  max_depth: 3
   specular_reflection: true
   diffuse_reflection: true
   diffraction: true
-  samples_per_src: 1.0e+6    # sesuaikan sampai hasil stabil (Fase 2)
+  samples_per_src: 1.0e+5     # naikkan sampai stabil (< 0,5 dB), lihat Fase 2
   ris_per_element: true      # false = synthetic array (bandingkan di E0)
-  # Dengan ris_per_element, jumlah sumber ray tracing = M, dan default
-  # PathSolver (1e6) mengalokasikan 1 GiB untuk specular_chain_counters
-  # sehingga OOM di GPU 12 GB. Lihat docs/LOG.md 2026-11-10 butir 2.
-  # Menurunkan nilai ini MEMOTONG jalur, jadi perlu uji konvergensi (butir 3).
-  max_num_paths_per_src: 1.0e+5  # M<=144; pakai 5.0e+4 untuk M=256
-  rx_batch_size: 256             # M<=144; pakai 128 untuk M=256
-  clutter_via_ris: false     # opsi fase 2 (desain §3.5)
+  # Anggaran jalur per sumber. Buffer image-method berukuran
+  #   max_num_paths_per_src * jumlah_sumber * 16 B
+  # dan TIDAK mengecil bila rx_batch_size diturunkan; dengan M = 64 nilai 1e6
+  # memberi 1 GiB per buffer dan beberapa buffer sekaligus menghabiskan 12 GB.
+  # Nilai 1e5 (102 MiB per buffer) muat. Konvergensinya DIUKUR, bukan
+  # diandaikan -- lihat docs/LOG.md: pada v0.1 nilai yang terlalu rendah
+  # memotong jalur dan menjatuhkan daya 28 dB tanpa error apa pun.
+  max_num_paths_per_src: 1.0e+5
+  rx_batch_size: 128         # turunkan bila VRAM 12 GB habis
+  drjit_variant: auto        # auto | cuda | llvm (llvm = CPU, tanpa batas VRAM)
 
 sensing:
   scnr_threshold_db: 13.0    # Gamma
-  integration_samples: 256   # L
+  integration_samples: 4096  # L
   clutter_residual: 0.01     # xi
   sensing_interferes_users: true   # beta_s = 1
 
 mobility:
   dt_s: 0.1
-  episode_steps: 50          # T
+  episode_steps: 50
   target_speed_mps: [1.0, 10.0]
+  speed_eval_bins_mps: [[1, 3], [4, 7], [8, 10]]
   user_speed_mps: [0.0, 1.5]
   num_trajectories:
-    train: 400
-    val: 50
-    test: 100
+    train: 200
+    val: 30
+    test: 50
   split_seeds:
     train: 1000
     val: 2000
@@ -127,32 +110,32 @@ mobility:
 
 observation:
   mode: partial              # partial | full
-  eff_channel_nmse_db: -20.0 # epsilon
+  eff_channel_nmse_db: -20.0
   sinr_report_quant_db: 1.0
   sinr_report_clip_db: [-10.0, 40.0]
-  user_pos_std_m: 0.5        # sigma_u
-  target_pos_ref_std_m: 0.5  # sigma_ref
-  target_pos_max_std_m: 5.0  # sigma_max
+  user_pos_std_m: 0.5
+  target_pos_ref_std_m: 0.5
+  target_pos_max_std_m: 5.0
   scnr_clip_db: [-20.0, 40.0]
   frame_stack: 4
 
 action:
-  mode: model_informed       # model_informed | direct_w
-  phase_update: incremental  # incremental | absolute
-  phase_step_kappa: 0.1      # kappa
+  phase_update: incremental  # incremental | absolute (ablasi A1)
+  phase_step_kappa: 0.1
   rzf_regularization: auto   # K * sigma_n^2 / P_max
-  init_phase: random         # random | geometric
+  init_phase: random         # random | geometric (mitigasi jika PPO macet)
 
 reward:
-  mode: hinge                # hinge | indicator | lagrangian
   lambda: 1.0
   hinge_scale_db: 10.0
-  lagrangian_lr: 0.01        # eta, hanya untuk mode lagrangian
 
 training:
+  device: cpu
   gamma: 0.95
-  total_timesteps: 2.0e+6
-  n_envs: 16
+  total_timesteps: 1.0e+6
+  n_envs: 8
+  num_seeds: 3
+  eval_every_steps: 50000
   ppo:
     learning_rate: 3.0e-4
     n_steps: 512
@@ -162,15 +145,7 @@ training:
     clip_range: 0.2
     ent_coef: 0.0
     net_arch: [256, 256]
-  recurrent_ppo:
-    lstm_hidden_size: 128
-  sac:
-    learning_rate: 3.0e-4
-    buffer_size: 1000000
-    batch_size: 256
-    total_timesteps: 1.0e+6
-  eval_every_steps: 50000
-  num_seeds: 5
+  gamma_threshold_sweep_db: [10.0, 16.0]   # E4b, dilatih ulang
 
 baselines:
   oracle_gd:
@@ -178,21 +153,15 @@ baselines:
     restarts: 4
     learning_rate: 0.05
     softmin_temperature: 0.1
+    device: cuda             # kecil; boleh cpu
   stale_period_steps: [5, 10]
   geometric:
     weight_grid: [0.25, 0.5, 0.75]
   rho_grid: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6]
 
-experiments:
-  e1:                        # kelayakan link budget dan peta cakupan (desain §7)
-    m_values: [64, 144, 256]
-    p_max_dbm_values: [20.0, 30.0, 40.0]
-    snr_threshold_db: 0.0    # Gate 1
-    coverage_target: 0.8     # Gate 1: >= 80% titik ROI di atas ambang
-    los_verify_samples: 64   # titik untuk uji silang ray_test vs PathSolver
-
 evaluation:
-  num_test_episodes: 200
+  noise_seeds_per_trajectory: 3      # 50 x 3 = 150 episode
+  p_max_eval_dbm: [20.0, 25.0, 30.0, 35.0, 40.0]
   confidence_level: 0.95
   bootstrap_samples: 10000
 

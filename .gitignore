@@ -1,8 +1,5 @@
 __pycache__/
 *.pyc
-*.egg-info/
-build/
-dist/
 .venv*/
 .env
 data/channels/
@@ -13,3 +10,7 @@ checkpoints/
 *.hdf5
 *.zip
 .ipynb_checkpoints/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
