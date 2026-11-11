@@ -339,6 +339,18 @@ Hiperparameter: lr 3e-4, γ 0,95, GAE λ 0,95, clip 0,2, n_steps 512 × 8 env, b
 
 **Model yang dilaporkan adalah checkpoint dengan reward val terbaik**, bukan kebijakan pada langkah terakhir (ditambahkan 2026-11-12, disetujui). Val dievaluasi tiap 50 ribu langkah dan statistik `VecNormalize` disimpan bersama tiap checkpoint, sehingga kebijakan terpilih dapat dimuat ulang persis — terverifikasi sampai 0,0e+00. Ini bukan kehalusan: ketiga seed A1 mencapai puncaknya di 350–450 ribu langkah lalu **ambruk**, pemenuhan SCNR 0,95 → 0,55 **tanpa kehilangan rate sedikit pun**. Kebijakan akhir karena itu memang lebih buruk, bukan hasil tukar-tambah, dan melaporkannya akan menempatkan A1 2,7 poin di bawah capaiannya. Pemilihan dilakukan di val dan test tetap tidak tersentuh sampai §7 E3.
 
+**Ketidakstabilan A1 dinyatakan sebagai keterbatasan** (ditambahkan
+2026-11-12). Dua percobaan menstabilkannya gagal, masing-masing 3 seed:
+`target_kl = 0,02` tidak mengubah puncak maupun waktu ambruknya (hanya
+mempercepat pelatihan 1,8x), dan `ent_coef = 0,003` menurunkan puncak val dari
++8,2 menjadi +4,0 karena menahan kebijakan terlalu stokastik di ruang aksi
+kontinu 67 dimensi. Ambruknya karena itu bukan artefak ukuran langkah PPO dan
+bukan akibat kebijakan mengerucut terlalu cepat. Kurva pelatihan A1
+ditampilkan apa adanya di F4, dan paper menyatakan bahwa angka A1 adalah
+checkpoint terbaik di val, bukan dataran. Hipotesis yang tersisa -- hinge (E9)
+bernilai nol begitu kendala terpenuhi, sehingga gradien yang mempertahankan
+SCNR ikut hilang -- menyentuh definisi reward dan belum diuji.
+
 ### 6.2 Baseline
 
 | ID | Baseline | Informasi |

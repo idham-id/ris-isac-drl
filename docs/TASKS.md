@@ -210,9 +210,48 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 ## Fase 7 — Finalisasi (minggu 7)
 
-- [ ] `src/risisac/eval/plots.py` dan `scripts/make_figures.py`: semua gambar dan tabel dari `results/` dengan satu perintah; ekspor PDF vektor dan tabel LaTeX.
-- [ ] `scripts/print_param_table.py`: tabel parameter LaTeX dari config.
-- [ ] Cek silang: tiap persamaan paper ↔ fungsi kode ↔ tes unit. Catat di `docs/LOG.md`.
-- [ ] README: langkah reproduksi dari instalasi sampai gambar.
+- [x] `src/risisac/eval/plots.py` dan `scripts/make_figures.py`: semua gambar dan tabel dari `results/` dengan satu perintah; ekspor PDF vektor dan tabel LaTeX.
+
+    `make_figures.py` **tidak menghitung ulang apa pun** — tanpa ray tracing, pelatihan, atau rollout. Keluaran ke `results/paper/<config_hash>/`: 9 gambar (PNG + PDF) dan 4 tabel LaTeX, plus `manifest.json` yang mencatat asal tiap artefak. Tujuh dari sembilan PDF murni vektor; F2 dan F2b memuat raster karena keduanya peta panas.
+- [x] `src/risisac/eval/tables.py` + `scripts/print_param_table.py`: T1–T4 LaTeX dari file hasil dan dari config, tanpa angka yang diketik ulang.
+- [x] `scripts/check_equations.py`: cek silang persamaan ↔ fungsi ↔ tes, dijalankan mekanis dengan `ast` (bukan regex atas seluruh berkas, yang ikut menangkap sebutan di komentar).
+- [x] `scripts/run_gate7_check.py`: ketiga kriteria Gate 7 sekaligus.
+- [x] README: langkah reproduksi dari instalasi sampai gambar, dengan waktu terukur tiap tahap.
 
 **Gate 7:** semua gambar dan tabel dibuat ulang dari repo bersih dengan satu perintah.
+
+> **Status 2026-11-12: LOLOS.** Tiga kriteria Gate 7 semuanya lolos.
+>
+> | kriteria | hasil |
+> |---|---|
+> | cek silang persamaan | 10 persamaan, **28 fungsi**, semuanya punya tes; (E8) dikecualikan dengan alasan tertulis (kendala keras §3.6, dilonggarkan menjadi (E9)) |
+> | satu perintah membuat ulang | 9 gambar (PNG + PDF) + 4 tabel LaTeX, dibuat ke **direktori kosong** |
+> | pohon git bersih | diperiksa `git status --porcelain` |
+>
+> Pemeriksaan dilakukan di direktori sementara yang kosong, bukan menimpa `results/paper/`: menulis ke direktori lama akan lolos walau sebuah gambar diam-diam berhenti dibuat, karena berkas lamanya masih ada.
+>
+> **Dua celah nyata yang tertangkap cek silang, lalu ditutup:** `rzf_directions` (E3) dan `dominant_right_singular` (E2/E5) tidak punya tes unit sama sekali. Keduanya kini diuji terhadap perhitungan lain, bukan terhadap dirinya sendiri — termasuk tes yang membuktikan bahwa memakai `A^H A` alih-alih `A^T conj(A)` gagal menolkan interferensi, kekeliruan yang menurut docstring-nya sendiri "tidak terdeteksi uji daya mana pun".
+>
+> **E0 dijalankan ulang.** Hasil E0 yang ada berasal dari config lama (`1365548d0387`) karena tiga kunci `ray_tracing` ditambahkan belakangan. Dijalankan ulang di config sekarang: angkanya **identik** (0,0144 dB; kalibrasi +1,05 dB), jadi ketiga kunci itu memang tidak mengubah fisika — tetapi sekarang hash-nya cocok. E1 **tidak** dijalankan ulang: selisihnya hanya `reward.lambda`, yang tidak dipakai E1 sama sekali, dan menjalankannya ulang berarti ray tracing tanpa guna.
+
+---
+
+## Percobaan menstabilkan A1 (disetujui 2026-11-12) — GAGAL, dan itu informatif
+
+Dua hipotesis diuji berdampingan, masing-masing 3 seed A1, tanpa menyentuh `configs/base.yaml` (21 run yang ada tetap sah).
+
+| setelan | puncak val | langkah puncak | akhir | ekor |
+|---|---|---|---|---|
+| base (`ent_coef` 0, tanpa `target_kl`) | +8,22 / +8,03 / +8,14 | 350–450k | +6,44 / +5,46 / +5,40 | +32% (ketiganya) |
+| `target_kl: 0.02` | +8,13 / +8,19 / +8,36 | 350–450k | +6,03 / +5,15 / +4,32 | +20% / −50% / −39% |
+| `ent_coef: 0.003` | +3,95 / +2,03 / +4,03 | 950k–1e6 | +3,52 / +1,78 / +3,60 | +89% / +84% / +34% |
+
+**`target_kl` tidak menyentuh masalahnya.** Puncaknya sama, waktunya sama, ambruknya tetap terjadi; yang berubah hanya di leg mana kurva kebetulan berakhir. Dua seed "lolos" kriteria ekor dengan rasio −50% dan −39% — persis kasus yang sudah diperingatkan di `run_gate5_check.py`: kurva yang sedang MENURUN di ujung lolos ambang "naik < 2%", dan angkanya harus dibaca sebagai ketidakstabilan, bukan konvergensi.
+
+**`ent_coef: 0.003` merusaknya.** Puncaknya jatuh dari +8,2 ke +4,0; pada ruang aksi kontinu 67 dimensi, entropi sebesar itu menahan kebijakan terlalu stokastik. Ia memang tidak ambruk — tetapi karena tidak pernah sampai ke ketinggian yang bisa diambruki.
+
+**Yang bisa disimpulkan:** ambruknya A1 **bukan** artefak ukuran langkah PPO dan bukan akibat kebijakan mengerucut terlalu cepat. Ia bertahan terhadap dua obat standar.
+
+**Hipotesis yang tersisa (belum diuji, butuh persetujuan karena menyentuh reward):** hinge λ[Γ−SCNR]₊/10 bernilai **nol** begitu kendala terpenuhi, sehingga setelah kebijakan mencapai pemenuhan tinggi, gradien yang MEMPERTAHANKAN SCNR ikut hilang dan kebijakan hanyut didorong suku laju sampai pemenuhannya pecah. Itu cocok dengan gejalanya: laju tidak berubah sedikit pun selama ambruk, hanya deteksi yang jatuh. Menguji ini berarti mengubah (E9), jadi tidak dilakukan tanpa persetujuan.
+
+**Akibatnya untuk paper:** A1 tetap dilaporkan pada checkpoint terbaik di val, dengan kurva pelatihannya ditampilkan apa adanya di F4 dan ketidakstabilannya dinyatakan terbuka sebagai keterbatasan — yaitu opsi 3 di laporan keputusan, bukan opsi 2.

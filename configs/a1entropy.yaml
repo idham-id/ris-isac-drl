@@ -1,0 +1,18 @@
+# Probe kestabilan A1 kedua (disetujui 2026-11-12): regularisasi entropi.
+#
+# Hipotesis berbeda dari a1stable. Di sana yang dibatasi adalah besar langkah
+# pembaruan; di sini yang dicegah adalah kebijakan mengerucut terlalu cepat
+# menjadi hampir deterministik, yang membuatnya rapuh terhadap satu pembaruan
+# buruk. `ent_coef: 0.0` di base adalah pilihan yang agresif untuk ruang aksi
+# kontinu berdimensi 67.
+#
+# Dijalankan berdampingan dengan a1stable, bukan sesudahnya: keduanya
+# 3 seed A1 saja, dan pada JOBS=3 keduanya muat dalam ~20 menit.
+defaults: [base]
+
+experiment:
+  name: a1entropy
+
+training:
+  ppo:
+    ent_coef: 0.003

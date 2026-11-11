@@ -1,0 +1,22 @@
+# Probe kestabilan A1 (disetujui 2026-11-12): membatasi BESAR langkah
+# kebijakan PPO lewat target_kl.
+#
+# Gejalanya: ketiga seed A1 naik ke puncak di 350-450 ribu langkah, ambruk
+# sampai 4,4 poin, lalu pulih sebagian -- osilasi, bukan konvergensi. Dengan
+# `n_epochs: 10`, `clip_range: 0.2`, dan laju belajar tetap tanpa penghentian
+# berbasis KL, satu pembaruan dapat menggeser kebijakan sangat jauh. SB3
+# memakai `target_kl` persis untuk itu: loop epoch berhenti begitu KL
+# perkiraan melewati ambang.
+#
+# 0,02 adalah nilai yang lazim dipakai (antara 0,01 dan 0,03). Config ini
+# TIDAK mengubah base, jadi 21 run yang sudah ada tetap sah; kalau probe ini
+# berhasil, barulah setelan ini dipromosikan ke base dan semuanya dilatih
+# ulang supaya perbandingannya adil.
+defaults: [base]
+
+experiment:
+  name: a1stable
+
+training:
+  ppo:
+    target_kl: 0.02

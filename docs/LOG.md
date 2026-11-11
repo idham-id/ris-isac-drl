@@ -1931,3 +1931,132 @@ kecepatan sudah ada di `mobility.speed_eval_bins_mps` dan sapuan P_max di
 yang sejajar dengan `channel_config_hash` layak dipertimbangkan di Fase 7 —
 beserta cara memindahkan direktori hasil tanpa merusak salinan `config.yaml`
 yang menjadi bukti provenans tiap run.
+
+## 2026-11-12 — Fase 7: satu perintah untuk semua gambar dan tabel, Gate 7 lolos
+
+### (a) Cek silang persamaan menemukan dua fungsi rumus tanpa tes
+
+`scripts/check_equations.py` membaca docstring dengan `ast`, bukan regex atas
+seluruh berkas — regex ikut menangkap `(E9)` di komentar dan melaporkan
+"ada implementasinya" untuk berkas yang hanya kebetulan menyebutnya.
+
+Dua celah nyata, keduanya ditutup:
+
+* **`rzf_directions` (E3)** tidak punya tes. Docstring-nya sendiri
+  memperingatkan bahwa memakai `A^H A` alih-alih `A^T conj(A)` adalah
+  "kesalahan yang mudah terjadi dan tidak terdeteksi oleh uji daya mana pun".
+  Tes barunya membuktikan tepat itu: varian yang benar menolkan interferensi
+  sampai 1e-9, varian `A^H A` tidak.
+* **`dominant_right_singular` (E2/E5)** tidak punya tes. Sekarang diuji
+  terhadap SVD numerik (‖G a_bar‖ = σ_max), terhadap 50 arah acak, dan
+  terhadap varian tanpa konjugat — yang memang terbukti lebih buruk.
+
+Pemisahan yang perlu dibuat: docstring **fungsi** yang menyebut `(E#)` adalah
+implementasi dan wajib punya tes; docstring **modul** menandai di mana
+persamaan itu tinggal. Tanpa pemisahan itu, tiap modul yang menyebut (E9) di
+pengantarnya tampak sebagai implementasi tak-teruji. `validate_analytic.py`
+kini menulis `(E0)` sesuai konvensi CLAUDE.md, bukan `E0` tanpa kurung.
+
+Hasil akhir: 10 persamaan, 28 fungsi, semuanya punya tes. (E8) dikecualikan
+dengan alasan tertulis di skrip: ia kendala keras §3.6 yang dilonggarkan
+menjadi (E9), dan tidak ada fungsi yang menghitungnya sendiri.
+
+### (b) E0 dijalankan ulang; E1 sengaja tidak
+
+Hasil E0 yang ada berada di `results/e0/1365548d0387/`, sementara
+`config_hash` sekarang `2ac2654fe51c`. Selisihnya **tiga kunci**:
+`ray_tracing.deterministic`, `.refraction`, `.seed` — semuanya ditambahkan
+setelah E0 dijalankan. Dijalankan ulang: **angkanya identik** (terburuk
+0,0144 dB, kalibrasi +1,05 dB, sebaran 0,00 dB). Ketiga kunci itu memang tidak
+mengubah fisika, tetapi sekarang hash-nya cocok.
+
+E1 **tidak** dijalankan ulang. Selisih config-nya hanya `reward.lambda`
+(1,0 → 10,0 dari Fase 3), yang tidak dipakai E1 sama sekali — E1 adalah peta
+cakupan dan SNR radar, tanpa reward. Menjalankannya ulang berarti ray tracing
+tanpa guna.
+
+### (c) Utang `config_hash` ditangani di sisi pembaca, bukan dengan menulis ulang sejarah
+
+Masalah yang dicatat 2026-11-12 (i) muncul langsung di Fase 7: `config_hash`
+dihitung dari SELURUH config, jadi menambah satu kunci tak relevan membuat
+hasil yang masih sah tampak hilang.
+
+Yang **tidak** dilakukan: mengganti nama direktori hasil lama. Tiap direktori
+run menyimpan salinan `config.yaml`-nya sendiri sebagai bukti provenans;
+mengganti hash-nya sementara salinan itu tetap yang lama akan memalsukan bukti
+tersebut.
+
+Yang dilakukan: `make_figures.py` membandingkan `config_used.json` tiap
+kandidat dengan config sekarang dan menerima yang selisihnya **seluruhnya**
+berada di daftar kunci tak relevan per eksperimen. Arahnya aman — kunci baru
+yang belum diklasifikasikan membuat kandidat DITOLAK, bukan diterima — dan
+kalau tidak ada yang lolos ia berhenti sambil mencetak selisihnya.
+
+### (d) Dua bug sendiri yang tertangkap saat membangun
+
+* **`both()` menganggap `out_path` selalu argumen terakhir.** Tidak:
+  `plot_f6_episode` dan `plot_f7_pmax_speed` menaruhnya di argumen kedua,
+  sehingga sebuah `Path` diteruskan ke `trajectory_index`. Diganti dengan
+  closure yang menerima jalur.
+* **Escape LaTeX menebak dari isi sel.** Aturan "lewatkan kalau diapit `$`"
+  menghancurkan label campuran seperti `$M$ (baris $\times$ kolom)`, yang
+  berawalan `$` tetapi tidak berakhiran `$`. Diganti penanda eksplisit
+  `Raw`: apa pun yang ditulis di `tables.py` boleh `Raw`, apa pun yang datang
+  dari file hasil selalu di-escape. Tanda minus juga ditulis `$-$`, bukan `-`,
+  karena di mode teks LaTeX `-` adalah tanda hubung dan jauh lebih pendek —
+  cacat kecil yang pada tabel otomatis akan muncul di setiap baris negatif.
+
+### (e) Gate 7 — LOLOS
+
+Diperiksa di direktori sementara yang **kosong**, bukan menimpa
+`results/paper/`: menulis ke direktori lama akan lolos walau sebuah gambar
+diam-diam berhenti dibuat, karena berkas lamanya masih di sana.
+
+| kriteria | hasil |
+|---|---|
+| cek silang persamaan | 10 persamaan, 28 fungsi, semuanya punya tes |
+| satu perintah membuat ulang | 9 gambar (PNG + PDF) + 4 tabel LaTeX |
+| pohon git bersih | `git status --porcelain` |
+
+### (f) Percobaan menstabilkan A1 — kedua obat standar gagal
+
+Disetujui pengguna. Dua hipotesis diuji berdampingan, 3 seed A1 masing-masing,
+**tanpa menyentuh `configs/base.yaml`** (21 run yang ada tetap sah; dukungan
+`target_kl` ditambahkan lewat `ppo_cfg.get(...)`, sehingga absennya di base
+berarti `None` dan perilaku base tidak berubah).
+
+| setelan | puncak val | langkah puncak | akhir | ekor |
+|---|---|---|---|---|
+| base | +8,22 / +8,03 / +8,14 | 350–450k | +6,44 / +5,46 / +5,40 | +32% (ketiganya) |
+| `target_kl: 0.02` | +8,13 / +8,19 / +8,36 | 350–450k | +6,03 / +5,15 / +4,32 | +20% / −50% / −39% |
+| `ent_coef: 0.003` | +3,95 / +2,03 / +4,03 | 950k–1e6 | +3,52 / +1,78 / +3,60 | +89% / +84% / +34% |
+
+**`target_kl` tidak menyentuh masalahnya.** Puncak sama, waktunya sama,
+ambruknya tetap. Yang berubah hanya di leg mana kurva kebetulan berakhir — dan
+dua seed "lolos" kriteria ekor dengan rasio −50% dan −39%, persis kasus yang
+sudah diperingatkan di `run_gate5_check.py`: kurva yang sedang MENURUN lolos
+ambang "naik < 2%" dan harus dibaca sebagai ketidakstabilan.
+
+Efek sampingnya menarik dan tidak relevan untuk keputusan: `target_kl`
+membuat pelatihan **1,8× lebih cepat** (3.194 lawan 1.769 langkah/detik)
+karena loop epoch berhenti lebih awal.
+
+**`ent_coef: 0.003` merusaknya.** Puncak jatuh dari +8,2 ke +4,0. Pada ruang
+aksi kontinu 67 dimensi, entropi sebesar itu menahan kebijakan terlalu
+stokastik. Ia tidak ambruk — karena tidak pernah sampai ke ketinggian yang
+bisa diambruki.
+
+**Kesimpulan:** ambruknya A1 bertahan terhadap dua obat standar, jadi ia bukan
+artefak ukuran langkah PPO dan bukan akibat kebijakan mengerucut terlalu cepat.
+
+**Hipotesis yang tersisa, belum diuji karena menyentuh reward:** hinge
+λ[Γ−SCNR]₊/10 bernilai **nol** begitu kendala terpenuhi. Setelah kebijakan
+mencapai pemenuhan tinggi, gradien yang MEMPERTAHANKAN SCNR ikut hilang, dan
+kebijakan hanyut didorong suku laju sampai pemenuhannya pecah. Cocok dengan
+gejalanya: selama ambruk, laju tidak berubah sedikit pun — hanya deteksi yang
+jatuh dari 0,95 ke 0,55. Mengujinya berarti mengubah (E9); tidak dilakukan
+tanpa persetujuan.
+
+**Akibatnya:** A1 tetap dilaporkan pada checkpoint terbaik di val, kurvanya
+ditampilkan apa adanya di F4, dan ketidakstabilannya dinyatakan terbuka
+sebagai keterbatasan — opsi 3 di laporan keputusan, bukan opsi 2.

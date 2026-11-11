@@ -243,6 +243,13 @@ def train_one(spec: RunSpec, cfg: dict | None = None,
                 gae_lambda=float(ppo_cfg["gae_lambda"]),
                 clip_range=float(ppo_cfg["clip_range"]),
                 ent_coef=float(ppo_cfg["ent_coef"]),
+                # target_kl menghentikan loop epoch PPO lebih awal begitu KL
+                # perkiraan melewati ambang, yaitu membatasi BESAR langkah
+                # kebijakan per pembaruan. Tidak ada di config base, sehingga
+                # absennya berarti None dan perilaku base tidak berubah sama
+                # sekali; hanya config yang menyebutkannya yang terpengaruh.
+                target_kl=(float(ppo_cfg["target_kl"])
+                           if ppo_cfg.get("target_kl") is not None else None),
                 policy_kwargs={"net_arch": list(ppo_cfg["net_arch"])},
                 seed=int(spec.seed), verbose=0)
     model.set_logger(configure(str(out_dir), ["csv", "tensorboard"]))

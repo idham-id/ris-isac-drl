@@ -230,3 +230,46 @@ def test_rzf_menekan_interferensi_antar_pengguna(snap, const):
     sinr_rzf = sm.sinr(h_eff, Wc, ws, const.noise_power_watt)
     sinr_mrt = sm.sinr(h_eff, mrt, ws, const.noise_power_watt)
     assert np.mean(np.min(sinr_rzf, axis=-1)) > np.mean(np.min(sinr_mrt, axis=-1))
+
+
+# --------------------------------------- dominant_right_singular (E2/E5), Fase 7
+def test_dominant_right_singular_memaksimalkan_daya_ke_ris():
+    """``G a_bar`` harus mencapai nilai singular terbesar G.
+
+    Itu definisi yang dipakai (E2)/(E5): a_bar adalah arah pancar BS yang
+    menyalurkan daya terbanyak ke RIS. Dibandingkan dengan SVD numerik, bukan
+    dengan dirinya sendiri.
+    """
+    rng = np.random.default_rng(0)
+    G = (rng.normal(size=(M, NT)) + 1j * rng.normal(size=(M, NT))) / np.sqrt(2)
+    a_bar = geometric.dominant_right_singular(G)
+
+    assert a_bar.shape == (NT,)
+    assert np.linalg.norm(a_bar) == pytest.approx(1.0)
+    sigma_max = np.linalg.svd(G, compute_uv=False)[0]
+    assert np.linalg.norm(G @ a_bar) == pytest.approx(sigma_max, rel=1e-10)
+
+
+def test_dominant_right_singular_mengalahkan_arah_acak():
+    """Arah acak mana pun tidak boleh mengungguli a_bar."""
+    rng = np.random.default_rng(1)
+    G = (rng.normal(size=(M, NT)) + 1j * rng.normal(size=(M, NT))) / np.sqrt(2)
+    best = np.linalg.norm(G @ geometric.dominant_right_singular(G))
+    for _ in range(50):
+        v = rng.normal(size=NT) + 1j * rng.normal(size=NT)
+        v /= np.linalg.norm(v)
+        assert np.linalg.norm(G @ v) <= best + 1e-9
+
+
+def test_dominant_right_singular_konjugasi_penting():
+    """Tanpa konjugat, arahnya salah untuk konvensi transpose-tanpa-konjugat.
+
+    ``vh[0]`` sendiri memaksimalkan ``norm(G @ conj(v))``, bukan
+    ``norm(G @ v)``; pada G kompleks keduanya berbeda nyata.
+    """
+    rng = np.random.default_rng(2)
+    G = (rng.normal(size=(M, NT)) + 1j * rng.normal(size=(M, NT))) / np.sqrt(2)
+    _, _, vh = np.linalg.svd(G, full_matrices=False)
+    tanpa_konjugat = vh[0] / np.linalg.norm(vh[0])
+    benar = geometric.dominant_right_singular(G)
+    assert np.linalg.norm(G @ benar) > np.linalg.norm(G @ tanpa_konjugat)

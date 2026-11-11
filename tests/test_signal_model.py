@@ -244,3 +244,53 @@ def test_bentuk_batch_konsisten(setup):
     out = sm.scnr(c, b, Wc, ws, s["Hc"], eta, SIGMA2, L, XI)
     assert out.shape == (t, Q)
     assert np.allclose(out, out[0])
+
+
+# ------------------------------------------------- rzf_directions (E3), Fase 7
+def test_rzf_directions_ternormalisasi_dan_zero_forcing():
+    """Dengan regularisasi -> 0, RZF harus menuju zero-forcing.
+
+    Kriterianya diambil dari (E3): SINR memakai ``h_e,k^T w_j``, jadi yang
+    harus mendiagonal adalah ``A^T W`` dengan h_e,k sebagai KOLOM ``A``.
+    """
+    rng = np.random.default_rng(0)
+    h_eff = random_complex(rng, K, NT)                 # (K, Nt)
+    w = pc.rzf_directions(h_eff, 1e-12)
+    assert w.shape == (NT, K)
+    assert np.allclose(np.linalg.norm(w, axis=-2), 1.0)
+
+    cross = h_eff @ w                                   # (K, K) = A^T W
+    off = cross - np.diag(np.diag(cross))
+    assert np.max(np.abs(off)) < 1e-6 * np.max(np.abs(np.diag(cross)))
+
+
+def test_rzf_directions_konvensi_gram_bukan_hermitian():
+    """``A^T conj(A)`` bukan ``A^H A``: tertukar membuat SINR turun diam-diam.
+
+    Docstring fungsi memperingatkan bahwa kekeliruan ini tidak terdeteksi uji
+    daya mana pun. Tes ini mendeteksinya: varian ``A^H A`` gagal menolkan
+    interferensi, sementara varian yang benar menolkannya.
+    """
+    rng = np.random.default_rng(1)
+    h_eff = random_complex(rng, K, NT)
+    a = np.swapaxes(h_eff, -1, -2)                      # (Nt, K)
+
+    benar = pc.rzf_directions(h_eff, 1e-12)
+    gram_salah = np.conj(a).T @ a                       # A^H A
+    w_salah = np.conj(a) @ np.linalg.inv(gram_salah + 1e-12 * np.eye(K))
+    w_salah = w_salah / np.linalg.norm(w_salah, axis=-2, keepdims=True)
+
+    bocor = lambda w: np.max(np.abs(                    # noqa: E731
+        (h_eff @ w) - np.diag(np.diag(h_eff @ w))))
+    assert bocor(benar) < 1e-9
+    assert bocor(w_salah) > 1e-3 * np.max(np.abs(h_eff @ w_salah))
+
+
+def test_rzf_directions_regularisasi_menahan_kanal_hampir_kolinear():
+    """Dua pengguna hampir kolinear: tanpa regularisasi normanya meledak."""
+    rng = np.random.default_rng(2)
+    h0 = random_complex(rng, NT)
+    h_eff = np.stack([h0, h0 + 1e-6 * random_complex(rng, NT)])
+    w = pc.rzf_directions(h_eff, 1e-2)
+    assert np.all(np.isfinite(w))
+    assert np.allclose(np.linalg.norm(w, axis=-2), 1.0)

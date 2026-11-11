@@ -1,4 +1,4 @@
-"""Validasi ringan E0 (docs/EXPERIMENT_DESIGN.md §4.5).
+"""Validasi ringan (E0) (docs/EXPERIMENT_DESIGN.md §4.5).
 
 Tiga pemeriksaan pada **scene ruang bebas** (tanpa gedung dan tanah):
 
