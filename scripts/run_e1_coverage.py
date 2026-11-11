@@ -178,12 +178,25 @@ def main() -> int:
     # Penguatan kaskade RIS atas jalur langsung, dengan precoder yang sama.
     ris_gain_db = to_db(np.abs(c_casc) ** 2) - to_db(np.abs(c_dir) ** 2)
 
-    gain_direct = np.sum(np.abs(hd) ** 2, axis=1)     # MRT, per Watt pancar
+    # Dua besaran berbeda, jangan tertukar:
+    #   gain_direct_mrt : kasus TERBAIK sistem tanpa RIS (precoder MRT ke h_d).
+    #   gain_direct     : jalur langsung dengan precoder a_bar yang SAMA dengan
+    #                     jalur RIS -- satu-satunya pembanding yang apel-ke-apel
+    #                     untuk pertanyaan "berapa yang ditambahkan RIS".
+    gain_direct_mrt = np.sum(np.abs(hd) ** 2, axis=1)
+    gain_direct = np.abs(c_dir) ** 2
     gain_ris = np.abs(c_eff) ** 2
+    # Kanal efektif (E2): h_e = h_d + G^T (e^{j phi} . g). Dengan MRT, ini
+    # pembanding yang adil terhadap gain_direct_mrt untuk pertanyaan "apakah
+    # sistem ber-RIS mengungguli sistem tanpa RIS yang beamforming optimal".
+    h_eff = hd + (np.exp(1j * phi) * g) @ G
+    gain_ris_mrt = np.sum(np.abs(h_eff) ** 2, axis=1)
 
     # -------------------------------------------------------------------- SNR
     snr_direct = {p: to_db(snr_from_gain(gain_direct, dbm_to_watt(p), sigma2))
                   for p in p_values}
+    snr_direct_mrt = {p: to_db(snr_from_gain(gain_direct_mrt, dbm_to_watt(p),
+                                             sigma2)) for p in p_values}
     snr_ris = {p: to_db(snr_from_gain(gain_ris, dbm_to_watt(p), sigma2))
                for p in p_values}
     scnr = {p: to_db(ideal_scnr(c_eff, b, dbm_to_watt(p), eta, sigma2, n_int))
@@ -197,16 +210,25 @@ def main() -> int:
               f"{float((scnr[p] >= radar_thr).mean()):13.3f} "
               f"{float(np.median(snr_ris[p])):12.1f} "
               f"{float(np.median(scnr[p])):12.1f}")
-    print(f"  (BS langsung @30 dBm: median "
-          f"{float(np.median(snr_direct[30.0])):.1f} dB, >10 dB di "
-          f"{float((snr_direct[30.0] > comm_thr).mean()):.3f})")
+    print(f"  (BS langsung @30 dBm, precoder sama: median "
+          f"{float(np.median(snr_direct[30.0])):.1f} dB; "
+          f"MRT tanpa RIS: {float(np.median(snr_direct_mrt[30.0])):.1f} dB)")
+    mrt_gain = to_db(gain_ris_mrt) - to_db(gain_direct_mrt)
+    print(f"  MRT dengan RIS vs MRT tanpa RIS: median "
+          f"{float(np.median(mrt_gain)):+.1f} dB, "
+          f"RIS menang di {float((mrt_gain > 0).mean()):.3f} ROI")
 
     # ----------------------------------------------------------------- Gate 1
     cov_comm = float((snr_ris[p_default] > comm_thr).mean())
     cov_radar = float((scnr[p_default] >= radar_thr).mean())
+    # Kriteria memakai MRT lawan MRT, BUKAN perbandingan pada precoder a_bar.
+    # a_bar dioptimalkan untuk mencapai RIS dan melumpuhkan jalur langsung,
+    # sehingga perbandingan pada precoder itu melebih-lebihkan peran RIS
+    # (+8,8 dB) dibanding kenyataan tingkat sistem (+1,4 dB). Lihat LOG.
+    ris_gain_db = to_db(gain_ris_mrt) - to_db(gain_direct_mrt)
     cov_gain = float((ris_gain_db > gain_thr).mean())
     print("")
-    print(f"Penguatan RIS atas jalur langsung: median "
+    print(f"Penguatan RIS (MRT dengan vs tanpa RIS): median "
           f"{float(np.median(ris_gain_db)):+.1f} dB, p10 "
           f"{float(np.percentile(ris_gain_db, 10)):+.1f} dB, "
           f"> {gain_thr:.0f} dB di {cov_gain:.3f} ROI")
@@ -236,7 +258,8 @@ def main() -> int:
     # ----------------------------------------------------------------- simpan
     np.savez_compressed(
         out_dir / "e1_coverage.npz", grid=grid, los_bs_roi=los_bs_roi,
-        los_ris_roi=los_ris_roi, gain_direct=gain_direct, gain_ris=gain_ris,
+        los_ris_roi=los_ris_roi, gain_direct=gain_direct, gain_direct_mrt=gain_direct_mrt,
+        gain_ris=gain_ris, gain_ris_mrt=gain_ris_mrt,
         ris_gain_db=ris_gain_db,
         scnr_db=np.stack([scnr[p] for p in p_values]),
         p_max_dbm_values=np.array(p_values), G=G, H=H, a_bar=a_bar,

@@ -4,6 +4,70 @@ Entri terbaru di atas. Setiap entri bertanggal dan menyebut fase/gate terkait.
 
 ---
 
+## 2026-11-11 (e) — Kriteria Gate 1 yang saya usulkan ternyata bisa digame
+
+Koreksi terhadap entri (d), ditemukan saat membuat gambar F2 apel-ke-apel.
+
+### Cacatnya
+
+Kriteria yang dipasang di (d) membandingkan kaskade RIS terhadap jalur langsung
+**pada precoder `a_bar` yang sama**, dan memberi +8,8 dB. Tetapi `a_bar` adalah
+vektor singular kanan utama **G**, yaitu precoder yang dioptimalkan untuk
+mencapai RIS — dan karenanya melumpuhkan jalur langsung:
+
+| Komunikasi @30 dBm, median | SNR |
+|---|---|
+| langsung, precoder `a_bar` | 37,6 dB |
+| langsung, MRT (kasus terbaik tanpa RIS) | **51,3 dB** |
+| lewat RIS, precoder `a_bar` | 46,8 dB |
+
+Jadi +8,8 dB sebagian adalah artefak pilihan precoder: kriterianya bisa
+"dimenangkan" dengan memilih precoder yang menguntungkan RIS. Lebih buruk lagi,
+dengan MRT **sistem tanpa RIS sama sekali (51,3 dB) mengungguli peta E1 lewat
+RIS (46,8 dB)**.
+
+### Ukuran yang benar
+
+Pertanyaan tingkat sistem adalah: apakah BS ber-RIS mengungguli BS tanpa RIS
+yang sama-sama beamforming optimal? Yaitu MRT pada kanal efektif (E2)
+`h_e = h_d + G^T (e^{j phi} . g)` lawan MRT pada `h_d`:
+
+> **MRT dengan RIS vs MRT tanpa RIS: median +1,4 dB, p10 +0,0 dB,
+> RIS menang di 91,1% ROI.**
+
+Kriteria Gate 1 dan `configs/base.yaml` diubah memakai ukuran ini. Verdict
+Gate 1 tidak berubah (0,911 >= 0,90), tetapi angkanya kini jujur.
+
+### Artinya
+
+Premis masih lemah. RIS hanya menambah **~1,4 dB** pada link komunikasi, dan di
+sepersepuluh ROI terlemah tidak menambah apa pun (p10 +0,0 dB). Penyebabnya
+sama seperti sebelumnya dan belum hilang: ROI ini **tanpa garis pandang tetapi
+tidak kekurangan daya**, karena kanyon mengantarkan daya multi-pantul yang kuat.
+
+Ambang 0 dB adalah bar yang lemah — penguatan 0,1 dB pun dihitung menang.
+Menaikkannya (mis. >= 6 dB di >= 80% ROI) akan membuat geometri ini GAGAL.
+
+**Menunggu keputusan**, karena ini menentukan apakah Fase 2 layak dimulai:
+
+* (a) Naikkan ambang ke nilai yang bermakna dan cari geometri yang memenuhinya.
+  Sapuan sejauh ini (lebar jalan 10-20 m, posisi RIS dan BS) belum menemukan
+  satu pun yang memberi penguatan MRT besar; mungkin perlu scene yang ROI-nya
+  benar-benar terkurung (bukan kanyon lurus).
+* (b) Terima ~1,4 dB dan ubah pembingkaian: kontribusi paper bergeser dari
+  "RIS memungkinkan cakupan NLoS" menjadi "DRL mengelola trade-off
+  komunikasi-sensing", dengan RIS sebagai derajat kebebasan untuk SENSING
+  (di mana perannya jauh lebih besar: SCNR RIS-saja median 39 dB) alih-alih
+  untuk cakupan komunikasi.
+* (c) Turunkan daya atau perbesar ROI sampai jalur langsung benar-benar lemah.
+
+Catatan untuk (b): kriteria radar Gate 1 sebelumnya terpenuhi 99,5% oleh jalur
+langsung saja, jadi klaim "RIS dibutuhkan untuk sensing" juga perlu diuji
+dengan ukuran MRT-lawan-MRT yang sama sebelum dipakai.
+
+---
+
+
 ## 2026-11-11 (d) — Geometri dioptimalkan ulang; kriteria Gate 1 baru
 
 Lanjutan entri (c). Dua keputusan disetujui: ukur dulu BS yang lebih jauh, dan

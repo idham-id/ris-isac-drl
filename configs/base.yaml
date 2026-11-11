@@ -106,7 +106,10 @@ gate1:
   comm_coverage_target: 0.90
   radar_margin_db: 3.0           # ambang = Gamma + margin
   radar_coverage_target: 0.80
-  ris_gain_threshold_db: 0.0     # kaskade RIS harus mengungguli jalur langsung
+  # Diukur MRT-dengan-RIS lawan MRT-tanpa-RIS. JANGAN membandingkan pada
+  # precoder a_bar: a_bar dioptimalkan untuk mencapai RIS dan melumpuhkan
+  # jalur langsung, sehingga melebih-lebihkan peran RIS (+8,8 vs +1,4 dB).
+  ris_gain_threshold_db: 0.0
   ris_gain_coverage_target: 0.90
 
 mobility:

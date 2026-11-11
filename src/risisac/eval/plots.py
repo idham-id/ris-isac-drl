@@ -143,8 +143,9 @@ def plot_f2_coverage(grid_xy, snr_direct_db, snr_ris_db, out_path: str | Path,
         g[yi, xi] = values
         return g
 
-    maps = [("BS langsung", to_grid(snr_direct_db)),
-            (f"Lewat RIS (M = {m_elements})", to_grid(snr_ris_db))]
+    maps = [("BS langsung (precoder sama)", to_grid(snr_direct_db)),
+            (f"Lewat RIS (M = {m_elements}, precoder sama)",
+             to_grid(snr_ris_db))]
 
     finite = np.concatenate([m[np.isfinite(m)] for _, m in maps])
     lo, hi = float(np.percentile(finite, 1)), float(np.percentile(finite, 99))
