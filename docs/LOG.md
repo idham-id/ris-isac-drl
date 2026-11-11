@@ -1287,3 +1287,159 @@ tuasnya adalah ξ, L, atau geometri BS.
   dilanjutkan), `docs/TASKS.md` Fase 2 dicentang.
 
 ---
+
+## 2026-11-11 (h) — Fase 3: model sinyal, tracker, baseline; Gate 3 GAGAL (reward, bukan fisika)
+
+Seluruh kiriman Fase 3 selesai dan 128 tes lolos, tetapi **Gate 3 gagal** pada
+satu kriteria. Sebabnya bukan ketidakmampuan sistem melainkan bobot reward, dan
+perbaikannya menyentuh §5.4 sehingga **menunggu persetujuan** (CLAUDE.md).
+
+### Yang dibangun
+
+| Modul | Isi |
+|---|---|
+| `system/signal_model.py` | (E1)-(E7) terbatch + reward (E9), NumPy |
+| `system/signal_model_torch.py` | padanan PyTorch terdiferensiasi untuk Oracle-GD |
+| `system/precoding.py` | RZF, beam sensing, anggaran daya dipenuhi **secara konstruksi** |
+| `system/ris.py` | pembaruan fasa inkremental / absolut (ablasi A1) |
+| `tracking/kalman.py` | Kalman kecepatan-konstan 2D + model galat §5.2 |
+| `baselines/common.py` | mesin evaluasi bersama semua metode |
+| `baselines/{random_policy,geometric,oracle_gd}.py` | B1, B2, B3/B4 |
+
+Empat uji yang diminta desain semuanya membandingkan bentuk tertutup dengan
+sesuatu yang dihitung **dengan cara lain**: SCNR (E7) lawan maksimum Rayleigh
+umum numerik (cocok 1e-8 relatif), SINR (E3) lawan simulasi 400.000 simbol
+(cocok 3%), tr(R_x) <= P_max (dipenuhi persis untuk sembarang rho), dan eta
+(E6) lawan persamaan radar bistatik (cocok 1e-12).
+
+### Dua temuan solver yang muncul saat merapikan reproduksibilitas
+
+**1. Solver GPU tidak bit-deterministik.** Dua pemanggilan identik berbeda
+sampai 0,48 dB; penyebabnya urutan reduksi atomik, bukan RNG (seed-nya sudah
+sama). `PathSolver(deterministic=True)` menghilangkannya (7,6e-6 dB) tetapi
+**tidak muat di GPU 12 GB**: link RIS 64-sumber meminta alokasi 32 GiB, dan
+hanya berjalan pada `rx_batch_size <= 8` dengan biaya sekitar 100x.
+
+Karena itu dibiarkan `false` dan reproduksibilitasnya **diukur**: E1 dijalankan
+tiga kali, dan besaran yang dilaporkan bergeser <= 0,05 dB (SCNR median
+41,7 / 41,8 / 41,7; penguatan RIS +12,0 / +11,9 / +11,9), sedangkan fraksi
+gate identik (0,932 ketiganya). Semua yang dilaporkan adalah median atas
+ratusan titik, jadi derau per elemen tidak lolos ke kesimpulan.
+
+**2. `refraction` menyala secara default dan tidak ada di §4.2.** Diukur:
+menyalakannya mengubah daya jalur langsung di ROI dengan median **-0,02 dB**
+(p90 +0,54, maks +1,58) -- tembusan 0,3 m beton pada 3,5 GHz memang tidak
+membuka jalur berarti. Dimatikan agar kode dan §4.2 ("spekular + difus +
+difraksi") cocok.
+
+### `channel_config_hash`: hash kanal dipisahkan dari hash config
+
+Menambah blok `gate3` dan `tracking` ke config mengganti nama file basis data
+dan membatalkan 9 menit ray tracing, padahal kanalnya identik. Nama file kini
+memakai `channel_config_hash`, yang hanya memuat bagian yang benar-benar
+menentukan isi kanal (`scene`, `ray_tracing`, `mobility`, dan sebagian
+`radio`).
+
+Arah kesalahan yang berbahaya di sini adalah yang sebaliknya -- hash terlalu
+sempit memakai ulang kanal basi secara diam-diam -- jadi pembagiannya dibuat
+**eksplisit dan diuji**: `tests/test_config.py` menolak kunci tingkat atas baru
+yang belum diklasifikasikan.
+
+Catatan: percobaan memakai ulang file lama dengan menamainya ulang **ditolak
+oleh pengukuran**. Dibandingkan dengan hitung ulang, isinya berbeda (median
+0,015-0,13 dB, maks 28 dB pada elemen lemah) -- yaitu derau Monte Carlo
+hamburan difus di atas, bukan kebasian. Basis data tetap dibangun ulang.
+
+### Clutter: temuan terbuka Gate 2 selesai, hasilnya melegakan
+
+Entri (g) menandai bahwa suku clutter di **R**_cn berada 77,6 dB di atas suku
+derau, sehingga SCNR ideal E1 adalah batas atas. Terukur sekarang dengan (E7)
+lengkap pada 200 snapshot val (fasa acak, rho = 0,5):
+
+| | SCNR median |
+|---|---|
+| tanpa clutter (xi = 0) | 13,8 dB |
+| dengan clutter (xi = 0,01) | 11,6 dB |
+
+Kerugian **median 2,34 dB**, p90 4,98 dB, maks 7,50 dB. Jauh di bawah 77,6 dB
+karena **R**_x berpangkat rendah: suku clutter rank-1 dan sebagian besar
+di-null MVDR, persis alasan (E7) memakai **R**_cn^{-1}. Tidak perlu mengubah
+xi, L, atau geometri.
+
+### B2 lebih lemah daripada B1 pada laju -- dan itu fisik, bukan bug
+
+| metode | reward | min rate | SCNR median | deteksi |
+|---|---|---|---|---|
+| B1 random | **3,674** | 4,179 | 10,2 dB | 0,390 |
+| B2 geometric | 2,275 | 2,275 | **35,5 dB** | **1,000** |
+| B3 oracle-GD | **11,428** | **11,472** | 15,1 dB | 0,845 |
+
+B2 memfokuskan RIS dan menaikkan daya kanal pengguna 5 dB, tetapi laju-nya
+justru turun. Dugaan pertama -- korelasi antar-pengguna naik (0,39 -> 0,69)
+sehingga RZF menderita -- **terbantah oleh pengukuran**: interferensi
+antar-pengguna hanya -167 dB, RZF menihilkannya dengan baik. Dekomposisi SINR
+(median, P = 1 W, rho = 0,10):
+
+| | sinyal | antar-pengguna | bocor sensing | derau |
+|---|---|---|---|---|
+| B1 fasa acak | -91,4 | -167,0 | **-105,7** | -124,0 |
+| B2 omega_t = 0,75 | -86,4 | -167,4 | **-94,9** | -124,0 |
+
+Yang mengikat adalah **kebocoran beam sensing ke pengguna**: 12 dB lebih besar
+pada B2. Mekanismenya langsung -- RIS yang sama melayani pengguna dan target di
+jalan yang sama, jadi semakin tajam RIS memfokus ke target, semakin besar
+``h_e,k^T w_s``. Dengan beta_s = 1 (§3.3) kebocoran itu murni interferensi.
+
+Ini justru **memperkuat** premis paper: kopling komunikasi-sensing di
+RIS-ISAC bukan sekadar pembagian daya, melainkan pembagian **profil fasa**, dan
+itulah yang harus dikelola agen. B3 yang mengoptimalkan bersama-sama memperoleh
+laju 11,47 **dan** SCNR 15,1 dB sekaligus.
+
+### Gate 3 — GAGAL pada satu kriteria
+
+| Kriteria | Hasil |
+|---|---|
+| B3 memenuhi SCNR >= Gamma di >= 90% val | **GAGAL (0,845)** |
+| B3 mengungguli B1 (margin reward 0,5) | PASS (+7,75) |
+| anggaran daya dipenuhi | PASS (4e-16) |
+
+**Sebabnya bukan ketidakmampuan sistem.** B2 sudah memenuhi Gamma di **100%**
+snapshot. Sapuan lambda pada B3 memisahkan kedua kemungkinan:
+
+| lambda | min rate | SCNR median | SCNR p10 | deteksi |
+|---|---|---|---|---|
+| **1,0 (sekarang)** | 11,472 | 15,1 | 12,1 | **0,845** |
+| 3,0 | 11,573 | 16,6 | 14,7 | 0,995 |
+| 10,0 | 11,630 | 18,0 | 16,1 | **1,000** |
+| 30,0 | 11,644 | 19,0 | 17,1 | 1,000 |
+| 100,0 | 11,580 | 19,7 | 18,1 | 1,000 |
+
+Yang menentukan: **laju tidak turun sama sekali** saat lambda dinaikkan — malah
+naik tipis (11,47 -> 11,64). Memenuhi kendala sensing di geometri ini praktis
+gratis; B3 tidak melakukannya pada lambda = 1 semata karena reward tidak
+menuntutnya.
+
+Akarnya adalah ketidakcocokan antara (E8) dan (E9). (E8) §3.6 menuliskan
+kendala **keras** SCNR >= Gamma; (E9) §5.4 melonggarkannya menjadi hinge dengan
+lambda = 1 dan skala 10 dB. Dengan laju sekitar 11 bit/s/Hz, kegagalan sensing
+total hanya berbiaya 3,3 bit/s/Hz — lebih murah daripada daya yang dibutuhkan
+untuk memperbaikinya. **Pada bobot ini sensing praktis opsional**, dan agen DRL
+hampir pasti akan mempelajari hal yang sama.
+
+**MENUNGGU KEPUTUSAN** (§5.4 adalah definisi reward; CLAUDE.md melarang
+mengubahnya tanpa persetujuan):
+
+* (a) **Naikkan lambda ke 10** (rekomendasi). Deteksi 1,000, dan tidak ada
+  biaya laju sama sekali. lambda = 3 adalah nilai terkecil yang lolos (0,995)
+  tetapi tanpa margin.
+* (b) Pertahankan lambda = 1 dan longgarkan kriteria Gate 3 menjadi "SCNR
+  >= Gamma dapat dicapai", yang sudah dibuktikan B2 (100%). Risikonya paper
+  melaporkan agen yang mengabaikan sensing.
+* (c) Perketat kendala lewat Gamma, bukan lambda (E4b sudah menyapu
+  Gamma = 10/13/16). Tidak menyelesaikan masalah: hinge yang lemah tetap lemah
+  pada Gamma berapa pun.
+
+Fase 4 tidak dimulai sebelum ini diputuskan: environment RL memakai (E9)
+sebagai reward, jadi melatih dulu berarti melatih pada objektif yang salah.
+
+---

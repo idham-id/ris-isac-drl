@@ -26,8 +26,11 @@ class RayTracingSettings:
     specular_reflection: bool
     diffuse_reflection: bool
     diffraction: bool
+    refraction: bool
     synthetic_array: bool
     rx_batch_size: int
+    deterministic: bool = True
+    seed: int = 42
 
     @classmethod
     def from_config(cls, cfg: dict) -> "RayTracingSettings":
@@ -42,8 +45,11 @@ class RayTracingSettings:
             specular_reflection=bool(r["specular_reflection"]),
             diffuse_reflection=bool(r["diffuse_reflection"]),
             diffraction=bool(r["diffraction"]),
+            refraction=bool(r.get("refraction", False)),
             synthetic_array=not bool(r["ris_per_element"]),
             rx_batch_size=int(r["rx_batch_size"]),
+            deterministic=bool(r.get("deterministic", True)),
+            seed=int(r.get("seed", 42)),
         )
 
     def paths_budget(self, num_sources: int) -> int:
@@ -123,7 +129,7 @@ def narrowband_coefficients(scene, tx_array, rx_array, tx_position, rx_positions
                 f"rx{i}", position=[float(v) for v in p],
                 **({"look_at": [float(v) for v in rx_look_at]} if rx_look_at is not None else {})))
 
-        a, _ = rt.PathSolver()(
+        a, _ = rt.PathSolver(deterministic=settings.deterministic)(
             scene,
             max_depth=settings.max_depth,
             samples_per_src=settings.samples_per_src,
@@ -132,6 +138,8 @@ def narrowband_coefficients(scene, tx_array, rx_array, tx_position, rx_positions
             specular_reflection=settings.specular_reflection,
             diffuse_reflection=settings.diffuse_reflection,
             diffraction=settings.diffraction,
+            refraction=settings.refraction,
+            seed=settings.seed,
             # WAJIB False. Default Sionna adalah True, yang menggeser tundaan
             # tiap PASANGAN PERANGKAT sehingga jalur pertamanya tiba di t = 0 --
             # dan ikut MENGHAPUS fasa propagasi dari koefisien: untuk link LoS
@@ -188,7 +196,7 @@ def clutter_channel(scene, tx_array, rx_array, tx_position, rx_position,
         "rx", position=[float(v) for v in np.asarray(rx_position, float).reshape(3)],
         **({"look_at": [float(v) for v in rx_look_at]} if rx_look_at is not None else {})))
 
-    paths = rt.PathSolver()(
+    paths = rt.PathSolver(deterministic=settings.deterministic)(
         scene,
         max_depth=settings.max_depth,
         samples_per_src=settings.samples_per_src,
@@ -197,6 +205,8 @@ def clutter_channel(scene, tx_array, rx_array, tx_position, rx_position,
         specular_reflection=settings.specular_reflection,
         diffuse_reflection=settings.diffuse_reflection,
         diffraction=settings.diffraction,
+        refraction=settings.refraction,
+        seed=settings.seed,
     )
     a, _ = paths.cir(out_type="numpy", normalize_delays=False)
     # Bentuk ``interactions`` BERGANTUNG mode array (docstring Sionna 2.2):

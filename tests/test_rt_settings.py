@@ -23,8 +23,8 @@ def make(per_src: int, total: int) -> RayTracingSettings:
     return RayTracingSettings(
         max_depth=5, samples_per_src=100_000, max_num_paths_per_src=per_src,
         max_paths_total=total, specular_reflection=True,
-        diffuse_reflection=True, diffraction=True, synthetic_array=False,
-        rx_batch_size=128)
+        diffuse_reflection=True, diffraction=True, refraction=False,
+        synthetic_array=False, rx_batch_size=128)
 
 
 def test_budget_tidak_pernah_melebihi_nilai_per_sumber():

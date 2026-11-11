@@ -18,7 +18,8 @@ sys.path.insert(0, str(REPO / "src"))
 from risisac.channels.database import (completed_trajectories,        # noqa: E402
                                        database_path, read_static,
                                        read_trajectory)
-from risisac.config import config_hash, load_config                   # noqa: E402
+from risisac.config import (channel_config_hash,  # noqa: E402
+                            config_hash, load_config)                   # noqa: E402
 from risisac.system.signal_model import (cascaded_coefficient,        # noqa: E402
                                          focus_phases, to_db)
 
@@ -26,7 +27,8 @@ from risisac.system.signal_model import (cascaded_coefficient,        # noqa: E4
 @pytest.fixture(scope="module")
 def db():
     cfg = load_config("base")
-    path = database_path(cfg, config_hash(cfg), root=REPO / cfg["paths"]["channel_db"])
+    path = database_path(cfg, channel_config_hash(cfg),
+                         root=REPO / cfg["paths"]["channel_db"])
     if not path.exists():
         pytest.skip(f"basis data kanal belum ada: {path} "
                     "(jalankan scripts/precompute_channels.py)")

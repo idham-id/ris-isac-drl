@@ -53,8 +53,8 @@ def settings():
     return RayTracingSettings(
         max_depth=3, samples_per_src=10_000, max_num_paths_per_src=100_000,
         max_paths_total=8_000_000, specular_reflection=True,
-        diffuse_reflection=False, diffraction=False, synthetic_array=False,
-        rx_batch_size=64)
+        diffuse_reflection=False, diffraction=False, refraction=False,
+        synthetic_array=False, rx_batch_size=64, deterministic=True, seed=42)
 
 
 def iso(rt, n=1):

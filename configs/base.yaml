@@ -116,6 +116,25 @@ ray_tracing:
   specular_reflection: true
   diffuse_reflection: true
   diffraction: true
+  # §4.2 menyebut "spekular + difus + difraksi" dan TIDAK menyebut refraksi,
+  # sedangkan default Sionna adalah refraction=True. Diukur pada geometri final:
+  # menyalakannya mengubah daya jalur langsung di ROI dengan median -0,02 dB
+  # (p90 +0,54 dB, maks +1,58 dB) -- tembusan 0,3 m beton pada 3,5 GHz memang
+  # tidak membuka jalur yang berarti. Dimatikan agar kode dan §4.2 cocok.
+  refraction: false
+  # Solver GPU tidak bit-deterministik dengan default False: urutan reduksi
+  # atomik berubah antar-pemanggilan (RNG-nya sudah ter-seed sama). Dua
+  # pemanggilan identik berbeda sampai 0,48 dB pada elemen lemah.
+  #
+  # deterministic=True ADA dan menghilangkannya (selisih 7,6e-6 dB), tetapi
+  # TIDAK MUAT di GPU 12 GB untuk link RIS per-elemen: 64 sumber meminta
+  # alokasi 32 GiB. Terukur hanya berjalan pada rx_batch_size <= 8, dan di
+  # situ biayanya sekitar 100x. Jadi dibiarkan false, dan sebagai gantinya
+  # reproduksibilitas DIUKUR dan dilaporkan (docs/LOG.md 2026-11-11 (h)):
+  # besaran yang dilaporkan bergeser jauh di bawah 0,1 dB karena semuanya
+  # median atas ratusan titik. Nyalakan bila tersedia GPU lebih besar.
+  deterministic: false
+  seed: 42
   # Konvergen: 3e4 / 1e5 / 3e5 memberi -83,79 / -83,72 / -83,52 dB (< 0,3 dB).
   samples_per_src: 1.0e+5
   ris_per_element: true      # false = synthetic array (bandingkan di E0)
@@ -172,6 +191,15 @@ gate1:
   ris_gain_threshold_db: 6.0
   ris_gain_coverage_target: 0.80
 
+# Ambang Gate 3 (docs/TASKS.md Fase 3): B3 Oracle-GD memenuhi SCNR >= Gamma di
+# >= 90% snapshot val, dan "jelas mengungguli B1". Yang kedua dibuat angka,
+# bukan penilaian: selisih reward rata-rata minimal 0,5 bit/s/Hz. Nilai itu
+# dipilih agar bermakna di skala reward (E9), yang satuannya rate minimum
+# dikurangi hukuman hinge.
+gate3:
+  oracle_detection_target: 0.90
+  oracle_over_random_reward_margin: 0.5
+
 mobility:
   dt_s: 0.1
   episode_steps: 50
@@ -214,6 +242,16 @@ observation:
   target_pos_max_std_m: 5.0
   scnr_clip_db: [-20.0, 40.0]
   frame_stack: 4
+
+tracking:
+  # Derau proses filter Kalman kecepatan-konstan (§5.2). Dipilih sebanding
+  # dengan percepatan yang benar-benar ada di lintasan: perubahan lajur
+  # menggeser target 2 m dalam 2 s dengan profil smoothstep, yang puncak
+  # percepatannya sekitar 1 m/s^2 (§2.3). Nilai jauh lebih kecil membuat
+  # filter terlalu percaya diri dan tertinggal saat target pindah lajur.
+  process_noise_std_mps2: 1.0
+  # Arah dan laju target belum diketahui saat episode mulai, jadi sengaja lebar.
+  init_velocity_std_mps: 5.0
 
 action:
   phase_update: incremental  # incremental | absolute (ablasi A1)

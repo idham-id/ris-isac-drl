@@ -70,19 +70,21 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 ## Fase 3 — Model sinyal, tracker, baseline (minggu 3)
 
-- [ ] `src/risisac/system/signal_model.py`: (E1)–(E7) terbatch, versi NumPy dan PyTorch. Docstring mencantumkan nomor persamaan.
-- [ ] `src/risisac/system/precoding.py`: RZF, beam sensing dari estimasi posisi, normalisasi daya.
-- [ ] `src/risisac/system/ris.py`: pembaruan fasa inkremental/absolut.
-- [ ] `src/risisac/tracking/kalman.py`: Kalman kecepatan-konstan 2D + model galat pengukuran §5.2.
-- [ ] `src/risisac/baselines/`: `random_policy.py` (B1), `geometric.py` (B2), `oracle_gd.py` (B3, B4).
-- [ ] Tes unit:
+- [x] `src/risisac/system/signal_model.py`: (E1)–(E7) terbatch, versi NumPy dan PyTorch. Docstring mencantumkan nomor persamaan.
+- [x] `src/risisac/system/precoding.py`: RZF, beam sensing dari estimasi posisi, normalisasi daya.
+- [x] `src/risisac/system/ris.py`: pembaruan fasa inkremental/absolut.
+- [x] `src/risisac/tracking/kalman.py`: Kalman kecepatan-konstan 2D + model galat pengukuran §5.2.
+- [x] `src/risisac/baselines/`: `random_policy.py` (B1), `geometric.py` (B2), `oracle_gd.py` (B3, B4).
+- [x] Tes unit:
   - SCNR (E7) bentuk tertutup = maksimum eigen umum numerik;
   - SINR (E3) = simulasi Monte Carlo simbol;
   - tr(**R**_x) ≤ P_max selalu;
   - faktor η (E6) cocok dengan persamaan radar bistatik ruang bebas untuk satu konfigurasi sederhana.
-- [ ] Uji kelayakan: B3 pada 200 snapshot val; pilih grid ω dan ρ untuk B1/B2 di val.
+- [x] Uji kelayakan: B3 pada 200 snapshot val; pilih grid ω dan ρ untuk B1/B2 di val.
 
 **Gate 3:** semua tes lulus; B3 memenuhi SCNR ≥ Γ pada ≥ 90% snapshot val dan jelas mengungguli B1.
+
+> **Status 2026-11-11: GAGAL pada kriteria deteksi (0,845).** Bukan karena sistem tidak mampu — B2 memenuhi Γ di 100% snapshot, dan B3 mencapai 1,000 pada λ = 10 **tanpa kehilangan laju sama sekali**. Penyebabnya hinge reward (E9) dengan λ = 1 terlalu lemah untuk menegakkan kendala keras (E8). Menunggu keputusan atas §5.4; lihat `docs/LOG.md` 2026-11-11 (h).
 
 ---
 

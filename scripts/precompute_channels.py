@@ -35,7 +35,8 @@ from risisac.channels.rt_extract import (RayTracingSettings,      # noqa: E402
                                          clutter_channel,
                                          narrowband_coefficients,
                                          release_gpu_memory)
-from risisac.config import config_hash, load_config               # noqa: E402
+from risisac.config import (channel_config_hash,  # noqa: E402
+                            config_hash, load_config)               # noqa: E402
 from risisac.mobility import (MobilitySpec, generate_trajectory,  # noqa: E402
                               split_seed)
 from risisac.mobility.trajectories import num_trajectories        # noqa: E402
@@ -167,9 +168,10 @@ def main() -> int:
 
     cfg = load_config(args.config)
     chash = config_hash(cfg)
+    dbhash = channel_config_hash(cfg)
     repo = Path(__file__).resolve().parents[1]
     path = (Path(args.out) if args.out
-            else database_path(cfg, chash, root=repo / cfg["paths"]["channel_db"]))
+            else database_path(cfg, dbhash, root=repo / cfg["paths"]["channel_db"]))
 
     if args.rebuild and path.exists():
         print(f"--rebuild: menghapus {path}")
@@ -207,7 +209,7 @@ def main() -> int:
     scene = load_scene_from_config(cfg)
     arrays = build_arrays(cfg, rt)
 
-    print(f"config hash : {chash}")
+    print(f"config hash : {chash} | hash kanal: {dbhash}")
     print(f"basis data  : {path}")
     print(f"scene       : {cfg['scene']['id']} | M {spec and ''}"
           f"{int(cfg['radio']['ris']['num_rows']) * int(cfg['radio']['ris']['num_cols'])}"
@@ -226,6 +228,7 @@ def main() -> int:
 
     write_static(path, G, H, Hc, {
         "config_hash": chash,
+        "channel_config_hash": dbhash,
         "scene_id": str(cfg["scene"]["id"]),
         "carrier_frequency_hz": float(cfg["radio"]["carrier_frequency_hz"]),
         "bs_tx_position": pl.bs_tx.tolist(),

@@ -97,6 +97,53 @@ def config_hash(cfg: dict, length: int = 12) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:length]
 
 
+#: Bagian config yang menentukan ISI basis data kanal.
+CHANNEL_SECTIONS = ("scene", "ray_tracing", "mobility")
+#: Bagian ``radio`` yang menentukan isi basis data kanal. ``None`` = seluruh
+#: subtree. Yang TIDAK ada di sini sengaja dikecualikan: ``p_max_*`` dan
+#: ``noise_figure_db`` hanya menskalakan daya saat evaluasi, ``rcs_m2`` masuk
+#: lewat eta (E6), dan ``ris.calibration_db`` dicatat tetapi tidak diterapkan.
+CHANNEL_RADIO_FIELDS: dict[str, tuple[str, ...] | None] = {
+    "carrier_frequency_hz": None,
+    "bs": None,
+    "ris": ("num_rows", "num_cols", "spacing_wavelengths", "element_pattern"),
+    "user": ("num_users", "pattern"),
+    "target": ("num_targets",),
+}
+#: Bagian yang TIDAK memengaruhi kanal sama sekali.
+NON_CHANNEL_SECTIONS = ("experiment", "sensing", "gate1", "gate3",
+                        "observation", "action", "reward", "tracking",
+                        "training", "baselines", "evaluation", "paths")
+
+
+def channel_config_subset(cfg: dict) -> dict:
+    """Bagian config yang benar-benar menentukan isi basis data kanal."""
+    subset: dict = {k: cfg[k] for k in CHANNEL_SECTIONS if k in cfg}
+    radio = cfg.get("radio", {})
+    picked: dict = {}
+    for key, fields in CHANNEL_RADIO_FIELDS.items():
+        if key not in radio:
+            continue
+        picked[key] = (radio[key] if fields is None
+                       else {f: radio[key][f] for f in fields if f in radio[key]})
+    subset["radio"] = picked
+    return subset
+
+
+def channel_config_hash(cfg: dict, length: int = 12) -> str:
+    """Hash untuk nama file basis data kanal (§4.4).
+
+    Memakai ``config_hash`` penuh di sini adalah kesalahan yang mahal: menambah
+    ambang gate atau mengubah parameter reward akan mengganti nama file dan
+    memaksa ray tracing ulang berjam-jam, padahal kanalnya identik. Sebaliknya,
+    hash yang terlalu sempit akan memakai ulang kanal basi secara diam-diam --
+    bahaya yang lebih besar. Karena itu pembagiannya **eksplisit** dan diuji:
+    ``tests/test_config.py`` menolak kunci tingkat atas baru yang belum
+    diklasifikasikan ke salah satu daftar.
+    """
+    return config_hash(channel_config_subset(cfg), length)
+
+
 def noise_power_watt(cfg: dict) -> float:
     """Daya derau per antena terima [W].
 
