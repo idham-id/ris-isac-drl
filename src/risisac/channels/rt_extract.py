@@ -132,7 +132,17 @@ def narrowband_coefficients(scene, tx_array, rx_array, tx_position, rx_positions
             specular_reflection=settings.specular_reflection,
             diffuse_reflection=settings.diffuse_reflection,
             diffraction=settings.diffraction,
-        ).cir(out_type="numpy")
+            # WAJIB False. Default Sionna adalah True, yang menggeser tundaan
+            # tiap PASANGAN PERANGKAT sehingga jalur pertamanya tiba di t = 0 --
+            # dan ikut MENGHAPUS fasa propagasi dari koefisien: untuk link LoS
+            # fasanya menjadi tepat nol. Fasa relatif antar-elemen dalam satu
+            # pemanggilan tetap benar (offset-nya sama untuk semua elemen),
+            # sehingga profil fokus tetap bekerja dan kesalahan ini TIDAK
+            # terlihat pada peta cakupan. Yang rusak adalah fasa relatif
+            # ANTAR-pemanggilan, yaitu persis yang dibutuhkan penjumlahan
+            # koheren h_e = h_d + g^T Theta G (E2) dan c = h_d,t + g_t^T Theta G
+            # (E5). Ditemukan oleh uji fasa E0 (docs/LOG.md 2026-11-11 (g)).
+            ).cir(out_type="numpy", normalize_delays=False)
 
         # a: (num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps)
         coeff = a[:, :, 0, :, :, 0].sum(axis=-1)      # (n_chunk, num_rx_ant, num_tx_ant)
@@ -142,3 +152,74 @@ def narrowband_coefficients(scene, tx_array, rx_array, tx_position, rx_positions
 
     _clear_devices(scene)
     return np.concatenate(out, axis=0)
+
+
+def clutter_channel(scene, tx_array, rx_array, tx_position, rx_position,
+                    settings: RayTracingSettings,
+                    tx_look_at=None, rx_look_at=None) -> np.ndarray:
+    """Kanal clutter monostatik **H**_c, jalur LoS tx-rx dibuang (§3.5).
+
+    Ray tracing BS-tx -> lingkungan -> BS-rx. Jalur LoS antara kedua panel BS
+    harus dibuang karena itu bukan clutter melainkan kebocoran tx->rx, dan
+    desain §3.7 butir 2 menyatakan isolasi tx/rx dianggap cukup sehingga
+    self-interference tidak dimodelkan. Panel hanya terpisah 0,5 m, jadi jalur
+    itu puluhan dB lebih kuat daripada seluruh clutter dan akan mendominasi
+    **R**_cn bila ikut terjumlah.
+
+    Pembuangannya memakai ``Paths.interactions``, bukan ambang tundaan: jalur
+    LoS adalah satu-satunya jalur yang seluruh kedalamannya bertipe
+    ``InteractionType.NONE``. Memakai tundaan akan rapuh terhadap
+    ``normalize_delays`` dan terhadap geometri yang kebetulan berdekatan.
+
+    :returns: (num_rx_ant, num_tx_ant) complex128
+    """
+    import sionna.rt as rt
+    from sionna.rt.constants import InteractionType
+
+    scene.tx_array = tx_array
+    scene.rx_array = rx_array
+    num_sources = 1 if settings.synthetic_array else int(tx_array.num_ant)
+
+    _clear_devices(scene)
+    scene.add(rt.Transmitter(
+        "tx", position=[float(v) for v in np.asarray(tx_position, float).reshape(3)],
+        **({"look_at": [float(v) for v in tx_look_at]} if tx_look_at is not None else {})))
+    scene.add(rt.Receiver(
+        "rx", position=[float(v) for v in np.asarray(rx_position, float).reshape(3)],
+        **({"look_at": [float(v) for v in rx_look_at]} if rx_look_at is not None else {})))
+
+    paths = rt.PathSolver()(
+        scene,
+        max_depth=settings.max_depth,
+        samples_per_src=settings.samples_per_src,
+        max_num_paths_per_src=settings.paths_budget(num_sources),
+        synthetic_array=settings.synthetic_array,
+        specular_reflection=settings.specular_reflection,
+        diffuse_reflection=settings.diffuse_reflection,
+        diffraction=settings.diffraction,
+    )
+    a, _ = paths.cir(out_type="numpy", normalize_delays=False)
+    # Bentuk ``interactions`` BERGANTUNG mode array (docstring Sionna 2.2):
+    #   per elemen  : (max_depth, num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths)
+    #   synthetic   : (max_depth, num_rx, num_tx, num_paths)
+    # Pada mode per elemen himpunan jalur bisa berbeda antar pasangan antena,
+    # jadi mask LoS tidak boleh diambil dari satu pasangan lalu dipakai ulang.
+    inter = np.asarray(paths.interactions)
+    none_all = np.all(inter == int(InteractionType.NONE), axis=0)
+    if none_all.ndim == 5:
+        is_los = none_all[0, :, 0, :, :]              # (Nr, Nt, num_paths)
+    elif none_all.ndim == 3:
+        is_los = none_all[0, 0][None, None, :]        # (1, 1, num_paths)
+    else:
+        raise RuntimeError(
+            f"clutter_channel: bentuk interactions tak dikenal {inter.shape}")
+    _clear_devices(scene)
+
+    # a: (num_rx, num_rx_ant, num_tx, num_tx_ant, num_paths, num_time_steps)
+    coeff = a[0, :, 0, :, :, 0]                       # (Nr, Nt, num_paths)
+    if is_los.shape[-1] != coeff.shape[-1]:
+        raise RuntimeError(
+            f"clutter_channel: jumlah jalur tidak cocok antara interactions "
+            f"({is_los.shape[-1]}) dan cir ({coeff.shape[-1]}).")
+    return np.asarray(np.where(is_los, 0.0, coeff).sum(axis=-1),
+                      dtype=np.complex128)

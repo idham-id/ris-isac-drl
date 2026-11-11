@@ -1113,3 +1113,177 @@ kriteria 5; docstring `scripts/run_e1_coverage.py`.
 * Kalibrasi `radio.ris.calibration_db` masih 0,0 dan menunggu E0 (Fase 2).
 
 ---
+
+## 2026-11-11 (g) — Fase 2: basis data kanal dan E0; bug fasa ditemukan E0
+
+Gate 2 **LOLOS**. Dalam prosesnya E0 menangkap satu bug yang membatalkan
+seluruh basis data kanal dan sebagian Gate 1 — persis fungsi yang diminta §4.5
+untuk uji itu.
+
+### Bug: `normalize_delays` menghapus fasa propagasi
+
+`Paths.cir()` Sionna memakai default **`normalize_delays=True`**, yang menggeser
+tundaan tiap pasangan perangkat sehingga jalur pertamanya tiba di t = 0 — dan
+ikut **menghapus fasa propagasi dari koefisien kanal**. Terukur pada tiga titik
+LoS ruang bebas (10 / 17 / 31 m):
+
+| | fasa koefisien |
+|---|---|
+| `normalize_delays=True` (default) | 0,0000 / 0,0000 / 0,0000 rad |
+| `normalize_delays=False` | 1,5870 / −2,9571 / 0,5212 rad |
+| analitik −2πr/λ | 1,5869 / −2,9571 / 0,5212 rad |
+
+**Mengapa ini tidak terlihat sampai sekarang.** Offset-nya sama untuk seluruh
+elemen dalam satu pemanggilan, jadi fasa **relatif antar-elemen** tetap benar.
+Profil fokus tetap bekerja, penjumlahan koheren lintas elemen tetap optimal,
+dan peta cakupan E1 tetap terlihat wajar. Yang rusak adalah fasa relatif
+**antar-pemanggilan**, yaitu persis yang dibutuhkan
+
+    h_e = h_d + g^T Theta G   (E2)      dan      c = h_d,t + g_t^T Theta G  (E5),
+
+dua penjumlahan yang menjadi inti seluruh Fase 3 ke atas. `clutter_channel`
+kebetulan sudah memakai `False`, sehingga **H**_c pun tidak konsisten dengan
+kanal lain.
+
+**Cara menangkapnya.** Uji kaskade saja TIDAK cukup: offset fasa global tidak
+mengubah magnitudo |Σ|, jadi uji kaskade E0 lolos 0,0002 dB sementara fasa per
+elemen meleset 120°. Kriteria kelulusan E0 karena itu ditambah **fasa per
+elemen < 1°**, dan `tests/test_channels_rt.py` mendapat dua tes baru: fasa
+absolut sama dengan −2πr/λ, dan dua pemanggilan terpisah bisa dijumlahkan
+koheren.
+
+**Dampak.** Seluruh 42.000 titik dihitung ulang. Gate 1 diuji ulang karena tiga
+dari enam kriterianya (komunikasi, radar, penguatan RIS) memakai penjumlahan
+`h_d + kaskade`. Hasilnya nyaris tidak bergeser — penguatan RIS 0,927 → 0,930,
+median +11,9 → +11,8 dB, SCNR median 41,6 → 41,9 dB — karena kaskade memang
+mengungguli jalur langsung 12 dB sehingga fasa relatifnya kurang berpengaruh di
+sini. Verdict Gate 1 tidak berubah, tetapi sekarang berdiri di atas fisika yang
+benar, dan Fase 3 (SINR E3, SCNR E7) tidak akan dimulai dari kanal yang salah.
+
+**Penjaga baru.** `config_hash` hanya menangkap config, bukan KODE, sehingga
+basis data lama terbaca sebagai lengkap dan dipakai diam-diam. Commit git kini
+disimpan di `meta`, prakomputasi memperingatkan bila berbeda dari HEAD, dan ada
+`--rebuild`.
+
+### Lintasan (§2.3)
+
+`src/risisac/mobility/trajectories.py`, murni NumPy, tanpa Sionna. Dua keputusan
+yang diambil dari pengukuran:
+
+1. **Target masuk ke ROI, tidak muncul di tengahnya.** Awal yang seragam di
+   sepanjang ROI menyisakan rata-rata hanya separuh ROI di depan target:
+   median **17 dari 50** langkah sebelum episode terpotong, dan sebagian besar
+   anggaran ray tracing terbuang pada langkah yang tidak pernah dipakai. Dengan
+   awal diacak di 20% pertama dari tepi masuk: median **34**, rata-rata 35,5,
+   minimum 17. Korelasi kecepatan-lawan-lama-di-ROI −0,54 (diuji).
+2. **Derau lateral harus berkorelasi waktu.** Derau putih per langkah dengan
+   jitter 5 cm menghasilkan kecepatan lateral **4,6 m/s** setelah didiferensiasi
+   — tidak fisik, dan merusak asumsi kecepatan-konstan tracker Kalman (§5.2).
+   Diganti derau berkernel Gauss; puncaknya kini ditentukan perubahan lajur
+   (2 m / 2 s, smoothstep) = 1,5 m/s. Durasi perubahan lajur dinaikkan 1 s → 2 s
+   (nilai lazim rekayasa lalu lintas).
+
+ROI juga diperlebar sampai 0,25 m dari dinding supaya **trotoar ikut masuk**:
+§2.1 menempatkan pengguna di trotoar, jadi ROI yang berhenti di tepi lajur akan
+meninggalkan pengguna di luar basis data kanal.
+
+Total titik penerima: 280 lintasan × 50 langkah × 3 entitas = **42.000**, cocok
+dengan perkiraan §4.3.
+
+### Basis data (§4.4)
+
+`src/risisac/channels/database.py`. Penulisan **bisa dilanjutkan**: atribut
+`complete` baru ditulis setelah seluruh dataset satu lintasan masuk, sehingga
+lintasan separuh tertulis terbaca sebagai hilang dan dihitung ulang. Lintasan
+ke-i memakai RNG `(seed_split, i)` sehingga isinya tidak bergantung urutan
+pengerjaan. Skema §4.4 ditambah `in_roi` dan atribut `speed_mps`, karena
+environment RL tidak boleh mengimpor Sionna dan harus mendapat semuanya dari
+file.
+
+**H**_c dihitung monostatik BS-tx → BS-rx dengan jalur LoS tx-rx dibuang lewat
+`Paths.interactions` (jalur LoS = seluruh kedalamannya `InteractionType.NONE`),
+bukan lewat ambang tundaan yang rapuh. Bentuk `interactions` **berbeda** antara
+mode per-elemen (6 dimensi) dan synthetic (4 dimensi); keduanya ditangani.
+
+### Prakomputasi
+
+| | |
+|---|---|
+| waktu | train 371,7 s + val 55,6 s + test 92,8 s = **8,7 menit** |
+| puncak VRAM | **4,40 GiB** dari 11,99 GiB |
+| ukuran file | 27,4 MiB |
+| laju | ~1,9 s per lintasan (150 titik, 3 jenis link) |
+
+VRAM terpakai merangkak pelan (4,28 → 4,40 GiB selama 280 lintasan). Tidak
+masalah pada skala ini, tetapi perlu diawasi bila basis data diperbesar.
+
+### E0 (§4.5) — `results/e0/1365548d0387/`
+
+**1. Uji implementasi** (ambang 0,1 dB):
+
+| | hasil |
+|---|---|
+| amplitudo per elemen **G** | 0,0000 dB |
+| amplitudo per elemen **g** | 0,0000 dB |
+| fasa per elemen **G** / **g** | 0,0159° / 0,0142° (ambang 1°) |
+| kaskade, 3 profil fokus + 1 gradien | terburuk **0,0144 dB** |
+
+Model analitiknya diturunkan dari source Sionna 2.2 yang terpasang
+(`path_solvers/field_calculator.py`), bukan dari ingatan: medan berangkat
+sebagai pola antena, 1/r · 1/√(4π), lalu λ/√(4π) dan proyeksi
+`jones_vec_dot(u,v) = u^H v` di penerima. Polanya dievaluasi lewat registry
+Sionna sendiri, termasuk pola `cosine` yang kita daftarkan.
+
+**2. Kalibrasi fisika.** Tang, W. dkk. (2021), *IEEE Transactions on Wireless
+Communications*, 20(1), 421–439, Pers. (6) kasus far-field beamforming:
+
+    PL = 64 pi^3 (d1 d2)^2
+         / (G_t G_r G M^2 N^2 d_x d_y lambda^2 F(th_t,ph_t) F(th_r,ph_r) A^2)
+
+Rumusnya **diverifikasi dari paper aslinya** (versi arXiv 1911.05326), bukan
+dari ingatan. Hasil: **calibration_db = +1,05 dB**, sebaran **0,00 dB** di
+d2 = 11–31 m, jadi benar-benar konstan.
+
+`calibration_db` **dicatat, tidak diterapkan** ke kanal. Pers. (6) adalah
+aproksimasi medan jauh yang menganggap seluruh sel satuan punya jarak dan sudut
+sama; model hibrida menjumlah per elemen secara eksak dan sudah terverifikasi
+terhadap Friis analitik sampai 0,014 dB. Mengurangi 1,05 dB justru merusak
+model yang benar agar cocok dengan aproksimasinya.
+
+**3. Per elemen vs synthetic array** (147 titik grid ROI scene utama): median
++0,16 dB, p95 |selisih| **2,19 dB**, maksimum 3,24 dB. **Terlalu besar untuk
+dipakai** — mode per elemen dipertahankan. (Jarak Fraunhofer RIS 8×8 adalah
+3–6 m, sedangkan ROI 10–30 m, jadi asumsi medan jauhnya tidak jauh meleset;
+yang menyimpang adalah titik-titik bersudut besar.)
+
+### Gate 2 — LOLOS
+
+| Kriteria | Hasil |
+|---|---|
+| semua tes lulus | **70 lolos** (dari 32) |
+| uji implementasi E0 < 0,1 dB | **0,0144 dB** |
+| `calibration_db` tercatat | **+1,05 dB** (`configs/base.yaml`) |
+| prakomputasi lengkap 3 split | **280/280 lintasan, 42.000 titik** |
+
+### TEMUAN untuk Gate 3 — clutter mendominasi lantai derau
+
+Terukur pada geometri final: ‖**H**_c‖² = −53,4 dB. Pada P = 30 dBm dan
+ξ = 0,01, suku clutter di **R**_cn berada **77,6 dB di atas** suku derau
+σ_n²/L. Tetapi **R**_x berpangkat rendah (rank 1 untuk beam sensing tunggal),
+sehingga suku clutter juga rank 1 dan pada prinsipnya bisa di-null MVDR —
+itulah sebabnya (E7) memakai **R**_cn⁻¹ dan bukan sekadar derau.
+
+Artinya SCNR sesungguhnya akan bergantung pada **keselarasan b dengan arah
+clutter**, bukan pada margin derau yang dilaporkan E1. SCNR ideal E1
+(median 41,9 dB terhadap ambang 16 dB) karena itu adalah **batas atas**, bukan
+ramalan. Harus diukur di Fase 3 sebelum Gate 3; bila kerugiannya besar,
+tuasnya adalah ξ, L, atau geometri BS.
+
+### Lain-lain
+
+* Sisa yang terbuka dari entri (f): `scripts/place_geometry.py` masih memakai
+  objektif jarak terkecil yang sudah terbukti keliru. Belum disentuh.
+* Dokumen diselaraskan: §4.2 (`normalize_delays`), §4.4 (skema + sifat bisa
+  dilanjutkan), `docs/TASKS.md` Fase 2 dicentang.
+
+---

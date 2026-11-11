@@ -56,13 +56,13 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 ## Fase 2 — Basis data kanal dan E0 (minggu 2)
 
-- [ ] `src/risisac/mobility/trajectories.py`: lintasan target (lajur, kecepatan diacak 1–10 m/s) dan pengguna (random waypoint), split 200/30/50 dengan seed terpisah.
-- [ ] `src/risisac/channels/rt_extract.py`: hitung **G**, **H**, **H**_c (buang LoS tx–rx), dan per titik **g**_k, **g**_t, **h**_{d,k}, **h**_{d,t}, **h**^{(r)}_{d,t}. RIS sebagai array planar tanpa mesh. Batch penerima; mode per elemen dan synthetic array.
-- [ ] `src/risisac/channels/database.py`: HDF5 sesuai §4.4.
-- [ ] `scripts/precompute_channels.py --config ... --split ...`: bisa dilanjutkan bila terputus; catat waktu dan puncak VRAM.
-- [ ] Atur `samples_per_src` sampai daya di 20 titik uji berubah < 0,5 dB terhadap nilai 2× lipat.
-- [ ] E0 (§4.5): uji implementasi vs analitik ruang bebas, kalibrasi terhadap model path loss RIS literatur, per elemen vs synthetic array. Gambar F3, Tabel T1.
-- [ ] Tes unit: bentuk/dtype, tanpa NaN/Inf; resiprositas beberapa link; kanal langsung BS di ROI jauh lebih lemah daripada jalur RIS terfokus; determinisme dengan seed sama.
+- [x] `src/risisac/mobility/trajectories.py`: lintasan target (lajur, kecepatan diacak 1–10 m/s) dan pengguna (random waypoint), split 200/30/50 dengan seed terpisah.
+- [x] `src/risisac/channels/rt_extract.py`: hitung **G**, **H**, **H**_c (buang LoS tx–rx), dan per titik **g**_k, **g**_t, **h**_{d,k}, **h**_{d,t}, **h**^{(r)}_{d,t}. RIS sebagai array planar tanpa mesh. Batch penerima; mode per elemen dan synthetic array.
+- [x] `src/risisac/channels/database.py`: HDF5 sesuai §4.4.
+- [x] `scripts/precompute_channels.py --config ... --split ...`: bisa dilanjutkan bila terputus; catat waktu dan puncak VRAM.
+- [x] Atur `samples_per_src` sampai daya di 20 titik uji berubah < 0,5 dB terhadap nilai 2× lipat.
+- [x] E0 (§4.5): uji implementasi vs analitik ruang bebas, kalibrasi terhadap model path loss RIS literatur, per elemen vs synthetic array. Gambar F3, Tabel T1.
+- [x] Tes unit: bentuk/dtype, tanpa NaN/Inf; resiprositas beberapa link; kanal langsung BS di ROI jauh lebih lemah daripada jalur RIS terfokus; determinisme dengan seed sama.
 
 **Gate 2:** semua tes lulus; uji implementasi E0 < 0,1 dB; `calibration_db` tercatat; prakomputasi lengkap untuk ketiga split.
 

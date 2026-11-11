@@ -216,3 +216,57 @@ def plot_f2_radar(grid_xy, scnr_db, out_path: str | Path,
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
     return out_path
+
+
+def plot_f3_e0(table: dict, out_path, tolerance_db: float = 0.1):
+    """F3 - validasi E0 (docs/EXPERIMENT_DESIGN.md Sec 4.5).
+
+    Dibuat dari ``T1_e0.json`` yang sudah ditulis, bukan dari variabel dalam
+    memori, sesuai konvensi "gambar dibuat dari file hasil" (CLAUDE.md).
+    """
+    import matplotlib.pyplot as plt
+
+    rows = table["calibration_rows"]
+    cascade = table["cascade"]
+    syn = table["synthetic_array"]
+
+    fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.2), constrained_layout=True)
+
+    d2 = [r["d2_m"] for r in rows]
+    axes[0].plot(d2, [r["hybrid_db"] for r in rows], "o-",
+                 label="hibrida (Sionna RT)")
+    axes[0].plot(d2, [r["tang2021_db"] for r in rows], "s--",
+                 label="Tang dkk. (2021), Pers. 6")
+    axes[0].set_xlabel("d(RIS-titik) (m)")
+    axes[0].set_ylabel("penguatan kaskade (dB)")
+    axes[0].set_title("E0-2: kalibrasi fisika\n"
+                      f"calibration_db = {table['calibration_db']:+.2f} dB")
+    axes[0].legend()
+
+    names = list(cascade)
+    axes[1].bar(range(len(names)), [cascade[n]["max_abs_db"] for n in names],
+                color="tab:blue")
+    axes[1].axhline(tolerance_db, color="crimson", ls="--",
+                    label=f"ambang {tolerance_db} dB")
+    axes[1].set_xticks(range(len(names)))
+    axes[1].set_xticklabels(names, rotation=20, ha="right")
+    axes[1].set_ylabel("|selisih| maks (dB)")
+    axes[1].set_yscale("log")
+    axes[1].set_title("E0-1: uji implementasi\nRT lawan Friis analitik")
+    axes[1].legend()
+
+    axes[2].hist(table["_synthetic_delta_db"], bins=30, color="tab:green",
+                 alpha=0.85)
+    axes[2].axvline(syn["median_db"], color="k", ls="--",
+                    label=f"median {syn['median_db']:+.2f} dB")
+    axes[2].set_xlabel("synthetic - per elemen (dB)")
+    axes[2].set_ylabel("jumlah titik")
+    axes[2].set_title(f"E0-3: synthetic array\n"
+                      f"p95 |selisih| = {syn['p95_abs_db']:.2f} dB")
+    axes[2].legend()
+
+    for ax in axes:
+        _style_axes(ax)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path

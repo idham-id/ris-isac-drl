@@ -222,6 +222,8 @@ Kedalaman maks **5** (bukan 3 seperti rancangan awal), spekular + difus + difrak
 
 Kedalaman, `samples_per_src`, dan `max_num_paths_per_src` **diukur sampai konvergen di Fase 1**, tidak diandaikan (`docs/LOG.md` 2026-11-11 (f)). Dengan hamburan difus dimatikan — sehingga himpunan jalur deterministik dan konvergensinya terbaca langsung — daya jalur langsung di ROI adalah −124,5 / −86,4 / −86,4 dB pada kedalaman 3 / 5 / 7: **kedalaman 3 membuang 38 dB** karena gelombang terpandu di jalan sempit butuh lebih banyak pantulan dinding. Dengan difus hidup, hamburan menambal lubang itu sehingga kesalahannya tidak terlihat.
 
+**`normalize_delays=False` wajib.** Default Sionna `Paths.cir()` adalah `True`, yang menggeser tundaan tiap pasangan perangkat sehingga jalur pertamanya tiba di t = 0 — dan ikut **menghapus fasa propagasi** dari koefisien kanal: untuk link LoS fasanya menjadi tepat nol. Fasa relatif antar-elemen dalam satu pemanggilan tetap benar, sehingga profil fokus tetap bekerja dan peta cakupan tetap terlihat wajar; yang rusak adalah fasa relatif **antar-pemanggilan**, yaitu persis yang dibutuhkan penjumlahan koheren **h**_e = **h**_d + **g**^T Θ **G** (E2) dan **c** = **h**_{d,t} + **g**_t^T Θ **G** (E5). Ditemukan oleh uji fasa E0 (`docs/LOG.md` 2026-11-11 (g)); diuji ulang di `tests/test_channels_rt.py`.
+
 Anggaran jalur dibatasi VRAM pada **hasil kali** `max_num_paths_per_src × jumlah_sumber`, bukan pada nilai per sumber, sehingga satu nilai tetap pasti salah di salah satu sisi: kanal langsung (8 sumber) butuh 10⁶, sedangkan 10⁶ pada kanal RIS per-elemen (64 sumber) adalah 1 GiB per buffer dan OOM. `max_paths_total` karena itu menurunkan nilai per sumber dari anggaran total. Pemotongan jalur **tidak memunculkan error apa pun**: pada 10⁵ jalur, menaikkan `samples_per_src` dari 10⁵ ke 10⁷ menjatuhkan daya jalur langsung dari −86 ke −144 dB. Uji kewarasannya: daya dengan difus hidup tidak boleh lebih kecil daripada dengan difus mati. Jarak Fraunhofer RIS 8×8 sekitar 3–6 m (2D²/λ dengan D = sisi 0,34 m atau diagonal 0,49 m), jadi ROI (≥ 10 m) umumnya di medan jauh; per elemen tetap dipakai sebagai default yang aman, dan E0 menentukan apakah synthetic array yang lebih cepat cukup akurat. Nama API (`load_scene`, `PlanarArray`, `Transmitter`, `Receiver`, `PathSolver`, dsb.) diverifikasi di dokumentasi versi terpasang.
 
 ### 4.3 Anggaran komputasi untuk GPU 12 GB
@@ -239,10 +241,12 @@ data/channels/<scene_id>/<config_hash>.h5
   /static/G, /static/H, /static/Hc
   /meta/  (f_c, posisi dan orientasi BS/RIS, parameter RT, versi Sionna, hash config)
   /traj/<split>/<traj_id>/user_k/{pos, g, hd}
-  /traj/<split>/<traj_id>/target_q/{pos, vel, g, hd_tx, hd_rx}
+  /traj/<split>/<traj_id>/target_q/{pos, vel, in_roi, g, hd_tx, hd_rx}
 ```
 
-Environment RL hanya membaca HDF5 dan tidak mengimpor Sionna.
+Environment RL hanya membaca HDF5 dan tidak mengimpor Sionna. Karena itu semua yang dibutuhkannya ikut disimpan, termasuk `in_roi` (§2.3 memotong episode saat target keluar ROI) dan atribut `speed_mps` per target.
+
+Penulisan **bisa dilanjutkan**: tiap grup lintasan baru ditandai `complete` setelah seluruh dataset-nya masuk, sehingga lintasan yang separuh tertulis terbaca sebagai hilang dan dihitung ulang, bukan terbaca sebagai data sah. Lintasan ke-*i* memakai RNG `(seed_split, i)` sehingga isinya tidak bergantung pada urutan pengerjaan.
 
 ### 4.5 Validasi ringan (E0)
 
