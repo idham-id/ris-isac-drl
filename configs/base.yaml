@@ -260,7 +260,22 @@ action:
   init_phase: random         # random | geometric (mitigasi jika PPO macet)
 
 reward:
-  lambda: 1.0
+  # Dinaikkan dari 1,0 pada 2026-11-11 (disetujui) setelah Gate 3 gagal.
+  #
+  # (E8) §3.6 menuliskan kendala KERAS SCNR >= Gamma, sedangkan (E9)
+  # melonggarkannya menjadi hinge. Dengan lambda = 1 dan skala 10 dB,
+  # kegagalan sensing TOTAL hanya berbiaya 3,3 bit/s/Hz padahal laju yang
+  # dipertaruhkan sekitar 11 bit/s/Hz -- sensing menjadi praktis opsional, dan
+  # Oracle-GD pun memilih melanggarnya di 15,5% snapshot.
+  #
+  # Sapuan lambda pada B3 (200 snapshot val, docs/LOG.md 2026-11-11 (h)):
+  #   lambda    1      3      10     30     100
+  #   deteksi   0,845  0,995  1,000  1,000  1,000
+  #   min rate  11,47  11,57  11,63  11,64  11,58
+  # Laju TIDAK turun saat lambda naik: memenuhi kendala sensing di geometri
+  # ini praktis gratis. lambda = 3 adalah nilai terkecil yang lolos tetapi
+  # tanpa margin; 10 memberi deteksi penuh dengan laju tertinggi.
+  lambda: 10.0
   hinge_scale_db: 10.0
 
 training:

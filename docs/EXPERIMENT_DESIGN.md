@@ -303,7 +303,16 @@ a_t = [Δφ ∈ [−1,1]^M, ρ_raw ∈ [−1,1], p_raw ∈ [−1,1]^K], dimensi 
 
 r_t = min_k R_k − λ · [Γ_dB − SCNR_dB]_+ / 10. (E9)
 
-Hinge menghukum SCNR **di bawah** ambang. λ = 1,0 tetap (tidak disapu di versi ini).
+Hinge menghukum SCNR **di bawah** ambang. **λ = 10,0 tetap** (tidak disapu di versi ini).
+
+λ dinaikkan dari 1,0 di Fase 3 setelah Gate 3 gagal (`docs/LOG.md` 2026-11-11 (h)). (E9) adalah pelonggaran dari kendala **keras** SCNR ≥ Γ pada (E8) §3.6, dan dengan λ = 1 pelonggaran itu terlalu longgar: kegagalan sensing total hanya berbiaya 3,3 bit/s/Hz sementara laju yang dipertaruhkan sekitar 11 bit/s/Hz, sehingga Oracle-GD pun memilih melanggar kendala di 15,5% snapshot. Sapuan pada B3 (200 snapshot val):
+
+| λ | 1 | 3 | 10 | 30 | 100 |
+|---|---|---|---|---|---|
+| fraksi SCNR ≥ Γ | 0,845 | 0,995 | **1,000** | 1,000 | 1,000 |
+| rate minimum rata-rata | 11,47 | 11,57 | **11,63** | 11,64 | 11,58 |
+
+Laju **tidak** turun saat λ naik — memenuhi kendala sensing di geometri ini praktis gratis, sehingga λ = 1 bukan titik kompromi melainkan sekadar bobot yang terlalu kecil untuk menegakkan kendala yang sudah dinyatakan (E8).
 
 ### 5.5 Episode
 
@@ -369,7 +378,7 @@ Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 = **15 run** × 1e6 l
 | K, Q | 2, 1 |
 | σ_rcs | 1 m² |
 | L, ξ, Γ, β_s | 4096, 0,01, 13 dB, 1 |
-| Δt, T, κ, λ | 0,1 s, 50, 0,1, 1,0 |
+| Δt, T, κ, λ | 0,1 s, 50, 0,1, **10,0** (λ ditetapkan di Fase 3, §5.4) |
 | ε, σ_u, σ_ref, σ_max | −20 dB, 0,5 m, 0,5 m, 5 m |
 | Ray tracing | max_depth **5**, samples_per_src 1e5, max_num_paths_per_src 1e6 (max_paths_total 8e6), spekular + difus + difraksi, per elemen — semuanya diukur sampai konvergen, §4.2 |
 | Geometri | jalan 6 m; BS (−16, −1, 10); RIS (2,9, 4, 6); d(BS–RIS) 20,0 m; ROI y ∈ [14, 34], 440 titik @ 0,5 m |

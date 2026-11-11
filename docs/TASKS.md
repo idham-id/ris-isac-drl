@@ -84,7 +84,7 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 **Gate 3:** semua tes lulus; B3 memenuhi SCNR ≥ Γ pada ≥ 90% snapshot val dan jelas mengungguli B1.
 
-> **Status 2026-11-11: GAGAL pada kriteria deteksi (0,845).** Bukan karena sistem tidak mampu — B2 memenuhi Γ di 100% snapshot, dan B3 mencapai 1,000 pada λ = 10 **tanpa kehilangan laju sama sekali**. Penyebabnya hinge reward (E9) dengan λ = 1 terlalu lemah untuk menegakkan kendala keras (E8). Menunggu keputusan atas §5.4; lihat `docs/LOG.md` 2026-11-11 (h).
+> **Status 2026-11-11: LOLOS** (3/3) setelah λ dinaikkan 1,0 → 10,0 di §5.4 (disetujui). B3 memenuhi Γ di **100%** snapshot val dengan rate minimum 11,63 bit/s/Hz, dan mengungguli B1 dengan margin reward +12,50. Kegagalan sebelumnya (0,845) berasal dari hinge (E9) yang terlalu lemah untuk menegakkan kendala keras (E8), bukan dari ketidakmampuan sistem — menaikkan λ **tidak** menurunkan laju sama sekali. Lihat `docs/LOG.md` 2026-11-11 (h) dan (i).
 
 ---
 

@@ -1443,3 +1443,47 @@ Fase 4 tidak dimulai sebelum ini diputuskan: environment RL memakai (E9)
 sebagai reward, jadi melatih dulu berarti melatih pada objektif yang salah.
 
 ---
+
+## 2026-11-11 (i) — lambda dinaikkan ke 10; Gate 3 LOLOS
+
+Keputusan pengguna atas titik keputusan entri (h): **opsi (a)**, naikkan bobot
+reward. `reward.lambda` 1,0 -> **10,0** di `configs/base.yaml`, dan §5.4 serta
+tabel parameter §8 diselaraskan.
+
+`channel_config_hash` tidak berubah (`6949e64b5418`), jadi **tidak ada ray
+tracing ulang** -- persis alasan hash kanal dipisahkan dari hash config di
+entri (h).
+
+### Gate 3 — LOLOS (3/3), `results/gate3/2ac2654fe51c/`
+
+| Kriteria | Ambang | Hasil |
+|---|---|---|
+| B3 memenuhi SCNR >= Gamma di val | >= 0,90 | **1,000** |
+| B3 mengungguli B1 (margin reward) | >= 0,5 | **+12,50** |
+| anggaran daya dipenuhi | < 1e-6 | 4e-16 |
+
+### Efek samping yang menguntungkan: urutan baseline menjadi benar
+
+| metode | reward (lambda=1) | reward (lambda=10) | min rate | SCNR median | deteksi |
+|---|---|---|---|---|---|
+| B1 random | 3,674 | **-0,874** | 4,179 | 10,2 dB | 0,390 |
+| B2 geometric | 2,275 | **2,275** | 2,275 | 35,5 dB | 1,000 |
+| B3 oracle-GD | 11,428 | **11,630** | 11,630 | 18,0 dB | 1,000 |
+
+Pada lambda = 1, B1 (fasa acak) mengungguli B2 (geometris) pada reward --
+urutan yang akan sulit dipertahankan di paper, karena baseline yang memakai
+informasi justru kalah dari yang tidak. Penyebabnya sama dengan kegagalan
+Gate 3: B1 membuang sensing (deteksi 0,390) dan nyaris tidak dihukum. Dengan
+lambda = 10 urutannya menjadi **B1 < B2 < B3** seperti seharusnya.
+
+Reward B3 kini sama persis dengan rate minimumnya (11,630) karena deteksinya
+100%, sehingga hinge-nya nol -- konsisten dengan (E9).
+
+### Yang masih terbuka
+
+* `scripts/place_geometry.py` masih memakai objektif jarak terkecil yang sudah
+  terbukti keliru (entri (f)). Tidak dipakai lagi, tetapi membingungkan bila
+  dibaca ulang.
+* Fase 4 belum dimulai.
+
+---
