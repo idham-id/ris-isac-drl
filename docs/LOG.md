@@ -1487,3 +1487,89 @@ Reward B3 kini sama persis dengan rate minimumnya (11,630) karena deteksinya
 * Fase 4 belum dimulai.
 
 ---
+
+## 2026-11-11 (j) — Fase 4: environment RL; Gate 4 LOLOS
+
+### Yang dibangun
+
+`src/risisac/env/ris_isac_env.py` (`RisIsacEnv`, `EnvConfig`, `TrajectoryStore`)
+dan `src/risisac/env/vec.py`. Environment **tidak mengimpor Sionna**; seluruh
+kanal dibaca dari HDF5 Fase 2 dan seluruh lintasan satu split dimuat ke memori
+sekali, karena membaca HDF5 tiap `reset()` akan mendominasi waktu langkah dan
+menggagalkan syarat laju Gate 4.
+
+Dimensi cocok dengan desain tanpa penyesuaian: observasi parsial **174**
+(§5.2), penuh **558** (174 + 2M(K+Q) = 174 + 384), aksi **67** (M + 1 + K,
+§5.3), dan setelah frame-stack 4 menjadi **696**.
+
+Tumpukan pembungkus: `SubprocVecEnv(8)` -> `VecNormalize(observasi saja)` ->
+`VecFrameStack(4)`. Normalisasi **sebelum** penumpukan supaya statistiknya
+dihitung atas 174 fitur satu frame, bukan atas 696 salinan yang berkorelasi.
+Reward sengaja **tidak** dinormalisasi (§6.1) agar sebanding dengan tabel hasil.
+
+### Gate 4 — LOLOS
+
+| Kriteria | Hasil |
+|---|---|
+| semua tes lulus | **142** |
+| `check_env` (parsial dan penuh) | LOLOS |
+| uji asap PPO-PO mengalahkan B1 di val | LOLOS (300 rb langkah, 3 seed) |
+| laju >= 1.000 langkah/detik per proses | **3.282** |
+
+Empat tes yang diminta desain semuanya menguji kesetaraan terhadap sesuatu di
+luar environment: `check_env` Gymnasium, determinisme seed (trajektori identik
+bit demi bit), reward **dihitung ulang dari `info`** dengan (E9), dan
+**kebijakan B2 lewat env = B2 langsung** sampai 1e-9 relatif. Yang terakhir
+penting: tanpa itu, selisih agen-lawan-baseline bisa berasal dari dua jalur
+hitung yang berbeda, bukan dari kebijakan.
+
+Menyusun tes terakhir itu memunculkan satu detail urutan frame: env membangun
+beam sensing dari state tracker di **awal** langkah lalu memperbarui tracker di
+**akhir** (§5.1 butir 3 lawan butir 5), jadi pembandingnya harus memakai
+`g_hat` sebelum langkah. Membandingkan dengan `g_hat` sesudah langkah memberi
+selisih 0,05% -- cukup kecil untuk lolos tanpa dicurigai bila toleransinya
+longgar.
+
+### Anggaran uji asap dinaikkan 100 rb -> 300 rb (berdasarkan pengukuran)
+
+Uji asap **gagal** pada 100 ribu langkah seperti tertulis di `docs/TASKS.md`,
+tetapi bukan karena environment rusak. Reward per langkah di val
+(B1 = -0,903):
+
+| langkah | 8 rb | 100 rb | 150 rb | 200 rb | **300 rb** |
+|---|---|---|---|---|---|
+| seed 0 | -2,490 | -1,679 | +0,412 | +0,924 | **+1,803** |
+| seed 1 | | | -0,710 | | **+2,530** |
+| seed 2 | | | +0,141 | | **+2,236** |
+
+Kurvanya monoton naik dan PPO melewati B1 antara 100 dan 150 ribu langkah.
+Pada 150 ribu marginnya hanya **0,19** di seed terburuk -- terlalu tipis untuk
+sebuah penyaring. Pada 300 ribu ketiga seed unggul **2,7-3,4**.
+
+**Mengapa 100 ribu tidak cukup.** Aksi ρ dimulai di 0,5 (ρ_raw ~ 0 pada
+inisialisasi kebijakan), sedangkan nilai yang baik sekitar 0,1 -- yaitu nilai
+yang B1 peroleh **gratis** lewat sapuan grid di val. ρ hasil PPO: 0,247
+(150 rb) -> 0,227 (200 rb) -> **0,139 / 0,075 / 0,143** (300 rb, tiga seed).
+Jadi sebagian besar 100 ribu langkah pertama habis untuk menurunkan ρ, dan
+baru setelah itu agen mulai memperbaiki fasa. Perbandingannya memang timpang
+di awal: B1 mendapat satu parameternya di-tuning pada data val, PPO tidak.
+
+Agen menemukan sendiri pembagian daya yang hampir sama dengan hasil sapuan
+grid B1 (0,075-0,143 lawan 0,100) -- sinyal bahwa (E9) dan precoder-nya
+konsisten satu sama lain.
+
+Biaya uji asap 300 ribu langkah adalah **130 detik**, dapat diabaikan
+dibanding 15 run x 1e6 langkah yang disaringnya.
+
+### Lain-lain
+
+* Laju env 3.282 langkah/detik per proses; throughput pelatihan PPO 2.317
+  langkah/detik dengan 8 env di CPU. Satu run 1e6 langkah karena itu sekitar
+  **7,2 menit**, jadi 15 run sekitar 1,8 jam -- jauh di bawah perkiraan
+  jadwal (minggu 5 "jalan malam hari").
+* Kanal efektif pada observasi diskalakan ke satuan amplitudo SNR
+  (`sqrt(P_max/sigma_n^2)`); nilai mentahnya berorde 1e-5 dan akan membuat
+  lapisan pertama jaringan bekerja di rentang yang buruk bahkan dengan
+  VecNormalize.
+
+---

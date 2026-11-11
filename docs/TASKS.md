@@ -90,14 +90,25 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 ## Fase 4 — Environment RL (minggu 4)
 
-- [ ] `src/risisac/env/ris_isac_env.py`: `RisIsacEnv` Gymnasium, API 5-tuple, `reset(seed=...)`, mode observasi `partial`/`full`, mode fasa `incremental`/`absolute`, P_max dan kecepatan diacak di train.
-- [ ] `info`: rate per pengguna, rate minimum, SCNR, flag deteksi, galat tracker, ρ, komponen reward.
-- [ ] `SubprocVecEnv` (8 env) + `VecNormalize` (observasi saja; reward tidak dinormalisasi agar mudah ditafsirkan) + frame-stack 4.
-- [ ] Tes: `gymnasium.utils.env_checker.check_env` lulus; seed sama → trajektori identik; reward = (E9) dihitung ulang dari `info`; kebijakan B2 lewat env = B2 langsung.
-- [ ] Benchmark kecepatan langkah.
-- [ ] Uji asap: PPO-PO 100 ribu langkah harus mengalahkan B1 di val.
+- [x] `src/risisac/env/ris_isac_env.py`: `RisIsacEnv` Gymnasium, API 5-tuple, `reset(seed=...)`, mode observasi `partial`/`full`, mode fasa `incremental`/`absolute`, P_max dan kecepatan diacak di train.
+- [x] `info`: rate per pengguna, rate minimum, SCNR, flag deteksi, galat tracker, ρ, komponen reward.
+- [x] `SubprocVecEnv` (8 env) + `VecNormalize` (observasi saja; reward tidak dinormalisasi agar mudah ditafsirkan) + frame-stack 4.
+- [x] Tes: `gymnasium.utils.env_checker.check_env` lulus; seed sama → trajektori identik; reward = (E9) dihitung ulang dari `info`; kebijakan B2 lewat env = B2 langsung.
+- [x] Benchmark kecepatan langkah.
+- [x] Uji asap: PPO-PO **300 ribu** langkah harus mengalahkan B1 di val.
+  - Anggaran dinaikkan dari 100 ribu pada 2026-11-11 **berdasarkan pengukuran**, bukan karena uji asapnya gagal secara substansi. Kurva belajar (reward per langkah di val; B1 = −0,903):
+
+    | langkah | 8 rb | 100 rb | 150 rb | 200 rb | **300 rb** |
+    |---|---|---|---|---|---|
+    | seed 0 | −2,490 | −1,679 | +0,412 | +0,924 | **+1,803** |
+    | seed 1 | | | −0,710 | | **+2,530** |
+    | seed 2 | | | +0,141 | | **+2,236** |
+
+    PPO melewati B1 antara 100 dan 150 ribu langkah, tetapi pada 150 ribu marginnya hanya 0,19 di seed terburuk. Pada 300 ribu ketiga seed unggul 2,7–3,4 — margin yang membuat uji asap menyaring environment yang rusak, bukan keberuntungan seed. Biayanya 130 detik, dapat diabaikan terhadap 15 run × 1e6 langkah yang disaringnya. Sebagian besar 100 ribu langkah pertama habis dipakai agen menurunkan ρ dari 0,5 (nilai awal aksi) ke sekitar 0,1 (ρ hasil tuning B1); lihat `docs/LOG.md` 2026-11-11 (j).
 
 **Gate 4:** semua tes lulus; uji asap lolos; laju ≥ 1.000 langkah/detik per proses.
+
+> **Status 2026-11-11: LOLOS.** 142 tes lulus (termasuk `gymnasium.utils.env_checker.check_env` untuk mode parsial dan penuh, determinisme seed, reward = (E9) dihitung ulang dari `info`, dan kebijakan B2 lewat env = B2 langsung). Uji asap lolos di 300 ribu langkah pada tiga seed. Laju env **3.282 langkah/detik** per proses; throughput pelatihan PPO 2.317 langkah/detik dengan 8 env.
 
 ---
 
