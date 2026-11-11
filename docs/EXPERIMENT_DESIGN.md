@@ -348,6 +348,29 @@ Hiperparameter: lr 3e-4, γ 0,95, GAE λ 0,95, clip 0,2, n_steps 512 × 8 env, b
 | B3 | **Oracle-GD**: Adam per langkah atas φ, ρ, p dengan struktur precoder yang sama; objektif softmin(R) − λ·softplus-hinge(SCNR); 300 iterasi, 4 restart (geometris + acak) | CSI dan posisi sempurna |
 | B4 | **Oracle-GD-stale(D)**: B3 setiap D ∈ {5, 10} langkah, ditahan di antaranya | CSI sempurna tetapi usang |
 
+**Semua baseline dievaluasi lewat env yang sama dengan agen** (ditambahkan
+2026-11-12), supaya lintasan, panjang episode, tracker, dan mesin reward-nya
+identik dan yang dibandingkan hanya keputusannya. Dua penyimpangan yang
+disengaja:
+
+* B1–B4 berjalan pada `phase_update='absolute'`. B1 ("fasa acak per langkah")
+  dan rumus fasa B2 tidak terdefinisi pada aksi inkremental. Ini **merugikan**
+  M1, bukan menguntungkannya: baseline boleh melompat ke fasa mana pun
+  seketika, M1 harus merambat κ·π per langkah.
+* B3/B4 berjalan dengan `perfect_csi=True`, yang membuat precoder memakai
+  kanal efektif sebenarnya (tanpa NMSE ε) dan beam sensing memakai **g**_t
+  sebenarnya, sesuai "CSI dan posisi sempurna" di tabel. Default-nya **mati**;
+  agen dan B1/B2 tidak pernah memakainya. Tracker tetap berjalan untuk B3/B4
+  dan galatnya tetap dilaporkan, karena ia akibat hilir dari deteksi, bukan
+  masukan keputusan.
+
+Keputusan B3 dioptimalkan untuk seluruh (lintasan, langkah) set evaluasi
+sekaligus sebagai satu batch — sah karena keputusannya hanya bergantung pada
+kanal sebenarnya pada langkah itu dan pada P_max yang tetap saat evaluasi —
+lalu diputar kembali lewat env. Bobot daya B3 dipotong ke kotak aksi env
+seperti metode lain; harganya terukur **0,06%** reward (+11,564 lewat env
+lawan +11,571 di mesin snapshot).
+
 ---
 
 ## 7. Eksperimen
@@ -359,7 +382,7 @@ Prioritas: **P1** wajib untuk paper, **P2** penting tetapi murah, **P3** hanya j
 | E0 | P1 | Validasi ringan §4.5 | F3, T1 |
 | E1 | P1 | Peta cakupan BS langsung vs lewat RIS (profil fokus terbaik per titik) dan peta SNR radar ideal di ROI, P_max ∈ {20, 30, 40} dBm. Melaporkan juga **penguatan kaskade RIS atas jalur langsung**, yang menjadi kriteria Gate 1 | F1, F2 |
 | E2 | P1 | Kurva pelatihan M1, M2, A1, masing-masing 3 seed | F4 |
-| E3 | P1 | Semua metode di set test: 50 lintasan × 3 seed noise = 150 episode, P_max = 30 dBm. Metrik: rata-rata dan CDF rate minimum, pemenuhan SCNR (% langkah ≥ Γ), durasi track, galat posisi tracker | T2, F5, F6 |
+| E3 | P1 | Semua metode di set test: 50 lintasan × 3 seed derau = 150 episode per seed latih (agen: 3 seed latih → 450 episode), P_max = 30 dBm. Metrik: rata-rata dan CDF rate minimum, pemenuhan SCNR, durasi track, galat posisi tracker | T2, F5, F6 |
 | E4a | P2 | Agen dari E2 dievaluasi pada P_max ∈ {20, 25, 30, 35, 40} dBm dan kelompok kecepatan {1–3, 4–7, 8–10} m/s, tanpa latih ulang | F7 |
 | E4b | P1 | Latih ulang M1 untuk Γ ∈ {10, 16} dB (3 seed, **2e6 langkah**; Γ = 13 dari E2), evaluasi semua metode untuk menggambar trade-off rate minimum vs pemenuhan SCNR | F8 |
 | E5 | P2 | Ablasi fasa inkremental vs absolut (dari E2), **plus sapuan κ ∈ {0,1; 0,25; 0,5} untuk M1 (3 seed)** — mengubah ablasi dari biner menjadi kuantitatif | T3 |
@@ -368,6 +391,20 @@ Prioritas: **P1** wajib untuk paper, **P2** penting tetapi murah, **P3** hanya j
 | E8 | P3 | Uji di scene kota bawaan tanpa latih ulang | Teks |
 
 Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 + M1(κ = 0,25; 0,5) × 3 = **21 run** (15 × 1e6 + 6 × 2e6 langkah).
+
+**Definisi dua metrik E3 yang namanya saja tidak cukup** (ditambahkan
+2026-11-12; keduanya diimplementasikan di `eval/metrics.py` dan diuji):
+
+* **Pemenuhan SCNR** = fraksi **langkah** dengan SCNR ≥ Γ, bukan fraksi
+  episode. Panjang episode berbeda (18–50 langkah di set test), jadi fraksi
+  episode akan memberi bobot berlebih kepada episode pendek.
+* **Durasi track** = jumlah langkah **berurutan sejak awal episode** dengan
+  galat tracker ≤ σ_max, dikali Δt. Ambangnya σ_max = 5 m, yaitu
+  `observation.target_pos_max_std_m` yang sudah dipakai §5.2 sebagai batas
+  atas simpangan pengukuran — tidak ada angka baru. Track yang pulih setelah
+  hilang **tidak** menyambung durasinya. Metrik ini **tersensor di atas** oleh
+  panjang episode, jadi fraksi episode yang tersensor ikut dilaporkan; pada
+  set test B2, B3, B4, dan A1 tersensor 100%.
 
 ---
 
@@ -400,6 +437,16 @@ Semua nilai di `configs/base.yaml`.
 - 3 seed pelatihan per konfigurasi; tiap seed dievaluasi pada 150 episode test yang sama.
 - Laporkan rata-rata ± interval kepercayaan 95% (bootstrap atas episode, dikelompokkan per seed). Kurva pelatihan: rata-rata ± std antar-seed.
 - Uji beda utama M1 vs B2 dan M1 vs B4: Welch t-test atas rata-rata per seed, plus ukuran efek. Nyatakan bahwa n = 3 seed membatasi daya uji.
+- **Cohen's d di sini tidak dapat dibaca sebagai ukuran efek** (terukur
+  2026-11-12: d = 10–73). Dengan n = 3 dan kebijakan yang sangat konsisten,
+  simpangan baku antar-seed nyaris nol sehingga pembaginya runtuh dan d
+  meledak. Yang dilaporkan di paper adalah **selisih beserta CI bootstrap**;
+  d boleh muncul sebagai catatan kaki, tidak sebagai klaim.
+- **Tiga "seed" baseline bukan tiga kebijakan.** B1–B4 tidak punya seed
+  latih, jadi ketiga kelompoknya adalah tiga undian derau atas kebijakan yang
+  sama, sementara tiga kelompok M1/M2/A1 adalah tiga kebijakan hasil
+  pelatihan berbeda. Uji M1 lawan baseline karena itu membandingkan dua jenis
+  ragam yang berbeda; nyatakan ini, jangan diam-diam.
 - Hasil disimpan sebagai Parquet + salinan config + git commit; gambar dibuat ulang dari file hasil.
 
 ---

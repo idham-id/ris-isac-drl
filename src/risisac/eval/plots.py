@@ -280,8 +280,22 @@ METHOD_COLORS = {
     "A1": OKABE_ITO["green"],
     "B1": OKABE_ITO["purple"],
     "B2": OKABE_ITO["orange"],
-    "B3": TEXT_MUTED,
+    # Keluarga oracle digambar sebagai tangga ABU-ABU, bukan sebagai tiga
+    # warna kategorikal baru: B3, B4-D5, dan B4-D10 adalah satu metode dengan
+    # keputusan yang makin basi, dan nilai abu yang memudar menyampaikan
+    # urutan itu sendiri. Warna kategorikal disimpan untuk metode yang
+    # benar-benar berbeda.
+    "B3": "#1A1A1A",
+    "B4-D5": "#6E6E6E",
+    "B4-D10": "#A6A6A6",
 }
+#: Urutan metode di legenda dan tabel.
+METHOD_ORDER = ("B1", "B2", "B3", "B4-D5", "B4-D10", "M1", "M2", "A1")
+
+
+def _ordered(names):
+    known = [m for m in METHOD_ORDER if m in set(names)]
+    return known + sorted(set(names) - set(METHOD_ORDER))
 
 
 def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
@@ -323,6 +337,219 @@ def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
     ax.set_title("F4 - kurva pelatihan pada split val")
     ax.legend(frameon=False, loc="lower right")
     _style_axes(ax)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_f5_rate_cdf(steps, out_path, scnr_threshold_db: float | None = None):
+    """F5 - CDF rate minimum semua metode (Sec 11).
+
+    Dipakai nilai **per langkah**, bukan rata-rata per episode: yang menarik
+    justru ekor kirinya -- seberapa buruk pengguna terlemah pada langkah
+    terburuk -- dan merata-ratakan per episode menghapusnya.
+    """
+    import matplotlib.pyplot as plt
+
+    from .metrics import ecdf
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.4), constrained_layout=True)
+    for method in _ordered(steps["method"].unique()):
+        values = steps.loc[steps["method"] == method, "min_rate"].to_numpy()
+        x, f = ecdf(values)
+        ax.plot(x, f, lw=1.8, color=METHOD_COLORS.get(method, OKABE_ITO["black"]),
+                label=method)
+    ax.set_xlabel("rate minimum antar-pengguna (bit/s/Hz)")
+    ax.set_ylabel("CDF empiris atas langkah")
+    ax.set_title("F5 - distribusi rate minimum pada set test")
+    ax.set_ylim(0.0, 1.0)
+    ax.legend(frameon=False, loc="lower right", ncol=2, fontsize=8)
+    _style_axes(ax)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_f6_episode(steps, out_path, trajectory_index: int,
+                    methods=("B2", "M1", "A1", "B3"),
+                    scnr_threshold_db: float = 13.0,
+                    sigma_max_m: float = 5.0, dt_s: float = 0.1):
+    """F6 - satu episode: SCNR terhadap waktu, ambang, deteksi, galat tracker.
+
+    Satu seed derau dan satu seed latih saja, supaya yang terlihat adalah
+    jalannya episode dan bukan rata-rata yang sudah dihaluskan.
+    """
+    import matplotlib.pyplot as plt
+
+    sel = steps[steps["trajectory_index"] == int(trajectory_index)]
+    noise_seed = int(sel["noise_seed"].min())
+    sel = sel[sel["noise_seed"] == noise_seed]
+
+    fig, axes = plt.subplots(2, 1, figsize=(7.2, 5.6), sharex=True,
+                             constrained_layout=True)
+    for method in _ordered([m for m in methods if m in set(sel["method"])]):
+        g = sel[sel["method"] == method]
+        g = g[g["train_seed"] == g["train_seed"].min()].sort_values("step")
+        t = g["step"].to_numpy() * float(dt_s)
+        color = METHOD_COLORS.get(method, OKABE_ITO["black"])
+        axes[0].plot(t, g["scnr_db"], lw=1.6, color=color, label=method)
+        miss = g["scnr_db"].to_numpy() < scnr_threshold_db
+        axes[0].plot(t[miss], g["scnr_db"].to_numpy()[miss], "v", ms=4,
+                     color=color, alpha=0.8)
+        axes[1].plot(t, g["tracker_error_m"], lw=1.6, color=color)
+
+    # Label ambang ditempel di tepi KANAN: di tepi kiri ia jatuh tepat di atas
+    # kurva, yang justru bagian paling ramai pada gambar ini.
+    axes[0].axhline(scnr_threshold_db, color=TEXT_MUTED, ls="--", lw=1.2)
+    axes[0].annotate(rf"$\Gamma$ = {scnr_threshold_db:g} dB",
+                     xy=(1.0, scnr_threshold_db), xycoords=("axes fraction",
+                                                            "data"),
+                     xytext=(-3, 4), textcoords="offset points", ha="right",
+                     fontsize=8, color=TEXT_MUTED)
+    axes[0].set_ylabel("SCNR (dB)")
+    axes[0].set_title(f"F6 - episode contoh: lintasan {trajectory_index}, "
+                      f"seed derau {noise_seed}", fontsize=11)
+    axes[0].annotate(r"$\blacktriangledown$ = langkah di bawah $\Gamma$",
+                     xy=(0.0, 1.0), xycoords="axes fraction",
+                     xytext=(2, -11), textcoords="offset points",
+                     fontsize=8, color=TEXT_MUTED)
+    axes[0].legend(frameon=False, loc="upper right", ncol=4, fontsize=8)
+
+    axes[1].axhline(sigma_max_m, color=TEXT_MUTED, ls="--", lw=1.2)
+    axes[1].annotate(rf"$\sigma_{{max}}$ = {sigma_max_m:g} m",
+                     xy=(1.0, sigma_max_m), xycoords=("axes fraction", "data"),
+                     xytext=(-3, -12), textcoords="offset points", ha="right",
+                     fontsize=8, color=TEXT_MUTED)
+    axes[1].set_ylabel("galat posisi tracker (m)")
+    axes[1].set_xlabel("waktu (s)")
+    for ax in axes:
+        _style_axes(ax)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_f8_tradeoff(points, out_path):
+    """F8 - trade-off rate minimum vs pemenuhan SCNR untuk Gamma berbeda.
+
+    :param points: ``[{"method", "gamma_db", "min_rate", "scnr_compliance",
+        "per_seed"(opsional)}]``.
+
+    Tiap metode menjadi satu garis yang menghubungkan nilai Gamma-nya, dengan
+    penanda yang membesar seiring Gamma. Seed individual M1 ikut digambar
+    sebagai titik kecil: pada Gamma = 16 dB sebarannya besar, dan rata-rata
+    saja akan menyembunyikannya (docs/LOG.md 2026-11-12 (c)).
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.6), constrained_layout=True)
+    gammas = sorted({float(p["gamma_db"]) for p in points})
+    sizes = {g: 5.0 + 3.0 * i for i, g in enumerate(gammas)}
+
+    by_method: dict[str, list] = {}
+    for p in points:
+        by_method.setdefault(str(p["method"]), []).append(p)
+
+    # Jarak minimum antar-label, dalam fraksi rentang sumbu. B2 dan B3 nyaris
+    # tidak bergerak saat Gamma berubah, sehingga ketiga labelnya menumpuk
+    # menjadi gumpalan tak terbaca. Label yang berdekatan digabung menjadi
+    # satu rentang ("10-16"), yang sekaligus menyampaikan isinya: metode itu
+    # memang tidak peka terhadap Gamma.
+    xs = [p["scnr_compliance"] for p in points]
+    ys = [p["min_rate"] for p in points]
+    span_x = max(max(xs) - min(xs), 1e-9)
+    span_y = max(max(ys) - min(ys), 1e-9)
+    near = 0.02
+
+    for method in _ordered(by_method):
+        rows = sorted(by_method[method], key=lambda r: float(r["gamma_db"]))
+        color = METHOD_COLORS.get(method, OKABE_ITO["black"])
+        ax.plot([r["scnr_compliance"] for r in rows],
+                [r["min_rate"] for r in rows], "-", lw=1.4, color=color,
+                alpha=0.9, label=method, zorder=3)
+        for r in rows:
+            ax.plot(r["scnr_compliance"], r["min_rate"], "o",
+                    ms=sizes[float(r["gamma_db"])], color=color, zorder=4)
+            for seed_point in r.get("per_seed", []):
+                ax.plot(seed_point[0], seed_point[1], ".", ms=4, color=color,
+                        alpha=0.55, zorder=2)
+
+        clusters: list[list] = []
+        for r in rows:
+            if clusters and (abs(r["scnr_compliance"]
+                                 - clusters[-1][-1]["scnr_compliance"]) / span_x
+                             < near) and (abs(r["min_rate"]
+                                              - clusters[-1][-1]["min_rate"])
+                                          / span_y < near):
+                clusters[-1].append(r)
+            else:
+                clusters.append([r])
+        for group in clusters:
+            lo = f"{float(group[0]['gamma_db']):g}"
+            hi = f"{float(group[-1]['gamma_db']):g}"
+            label = lo if lo == hi else f"{lo}–{hi}"
+            anchor = group[-1]
+            ax.annotate(label, xy=(anchor["scnr_compliance"],
+                                   anchor["min_rate"]),
+                        xytext=(6, -3), textcoords="offset points",
+                        fontsize=7, color=color)
+    ax.set_xlabel(r"pemenuhan SCNR (fraksi langkah dengan SCNR $\geq$ $\Gamma$)")
+    ax.set_ylabel("rate minimum rata-rata (bit/s/Hz)")
+    ax.set_title(r"F8 - trade-off komunikasi-sensing; label = $\Gamma$ (dB)")
+    ax.legend(frameon=False, loc="lower left", ncol=2, fontsize=8)
+    _style_axes(ax)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path
+
+
+def plot_f7_pmax_speed(table, out_path, speed_bins, metrics=None):
+    """F7 - kinerja terhadap P_max dan kelompok kecepatan target (E4a).
+
+    :param table: baris dengan kolom ``axis`` ("p_max_dbm" atau
+        "speed_group"), ``x``, ``method``, dan tiap metrik beserta
+        ``_lo``/``_hi``.
+
+    Kedua kolom BERBAGI sumbu-y per baris (``sharey="row"``). Tanpa itu
+    panel kecepatan ter-zoom otomatis ke rentangnya sendiri dan perbedaan
+    0,03 terlihat sebesar perbedaan 0,75 di panel daya -- padahal justru
+    kedataran panel kecepatan yang merupakan temuannya. Pita adalah CI 95%
+    bootstrap berkelompok (Sec 9), bukan std.
+    """
+    import matplotlib.pyplot as plt
+
+    metrics = metrics or (("min_rate", "rate minimum (bit/s/Hz)"),
+                          ("scnr_compliance", "pemenuhan SCNR"))
+    axes_spec = (("p_max_dbm", "$P_{max}$ (dBm)"),
+                 ("speed_group", "kelompok kecepatan target (m/s)"))
+    fig, axs = plt.subplots(len(metrics), 2, figsize=(9.2, 2.6 * len(metrics) + 1.0),
+                            constrained_layout=True, squeeze=False,
+                            sharey="row")
+
+    labels = [f"{float(lo):g}-{float(hi):g}" for lo, hi in speed_bins]
+    for row, (column, ylabel) in enumerate(metrics):
+        for col, (axis, xlabel) in enumerate(axes_spec):
+            ax = axs[row][col]
+            sub = table[table["axis"] == axis]
+            for method in _ordered(sub["method"].unique()):
+                g = sub[sub["method"] == method].sort_values("x")
+                color = METHOD_COLORS.get(method, OKABE_ITO["black"])
+                x = g["x"].to_numpy(dtype=float)
+                ax.plot(x, g[column], "-o", ms=4, lw=1.6, color=color,
+                        label=method)
+                ax.fill_between(x, g[f"{column}_lo"], g[f"{column}_hi"],
+                                color=color, alpha=0.16, lw=0)
+            if axis == "speed_group":
+                ax.set_xticks(range(len(labels)))
+                ax.set_xticklabels(labels)
+            if row == len(metrics) - 1:
+                ax.set_xlabel(xlabel)
+            if col == 0:
+                ax.set_ylabel(ylabel)
+            _style_axes(ax)
+    axs[0][1].legend(frameon=False, loc="best", ncol=2, fontsize=8)
+    fig.suptitle("F7 - kinerja terhadap daya pancar dan kecepatan target "
+                 "(tanpa latih ulang)", fontsize=11)
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
     return out_path

@@ -6,11 +6,14 @@ yang membandingkan agen dengan B1 dan B2 pada **episode** yang sama. Dua hal
 baru muncul begitu baseline dijalankan di dalam env:
 
 * estimasi posisi target datang dari **tracker Kalman**, bukan dari galat
-  Gaussian i.i.d. -- dan kualitas tracker bergantung pada keputusan sebelumnya;
-* episode berakhir saat target meninggalkan ROI, sehingga panjang episode pun
-  bergantung keputusan.
+  Gaussian i.i.d. -- dan kualitas tracker bergantung pada keputusan sebelumnya,
+  karena tracker hanya mendapat pengukuran pada langkah yang terdeteksi;
+* episode berakhir saat target meninggalkan ROI, sehingga panjangnya berbeda
+  antar-lintasan. Panjang itu **tidak** bergantung pada keputusan (``truncated``
+  hanya membaca ``target_in_roi`` milik lintasan), jadi semua metode berjalan
+  pada langkah yang sama persis -- yang justru membuat perbandingannya adil.
 
-Keduanya justru bagian dari masalah yang diklaim paper. Karena itu angka
+Yang pertama adalah bagian dari masalah yang diklaim paper. Karena itu angka
 baseline untuk paper diambil dari jalur ini, bukan dari mesin snapshot.
 
 **Mode fasa.** §6.2 mendefinisikan B1 sebagai "fasa acak per langkah" dan B2
@@ -193,3 +196,146 @@ def tune_baseline(name: str, env, cfg: dict, env_cfg, indices, seed: int = 0,
             print(f"   {name} {desc} -> reward/langkah {rows[-1]['reward_per_step']:+.3f}")
     best = max(rows, key=lambda r: r["reward_per_step"])
     return {"best": {k: best[k] for k in combos[0]}, "grid": rows}
+
+
+# --------------------------------------------------------------- B3 dan B4
+def episode_snapshot(traj, store, env_cfg, steps: int) -> "object":
+    """Snapshot (§6.2) untuk ``steps`` langkah pertama satu lintasan.
+
+    Oracle-GD melihat kanal **sebenarnya**, jadi snapshot dibangun langsung
+    dari lintasan dan bukan dari observasi env.
+    """
+    from .common import Snapshot
+
+    s = int(steps)
+    return Snapshot(
+        G=store.G.astype(np.complex128), H=store.H.astype(np.complex128),
+        Hc=store.Hc.astype(np.complex128),
+        hd_user=np.transpose(traj.user_hd[:, :s, :], (1, 0, 2)).astype(np.complex128),
+        g_user=np.transpose(traj.user_g[:, :s, :], (1, 0, 2)).astype(np.complex128),
+        hd_tgt_tx=np.transpose(traj.target_hd_tx[:, :s, :], (1, 0, 2)).astype(np.complex128),
+        hd_tgt_rx=np.transpose(traj.target_hd_rx[:, :s, :], (1, 0, 2)).astype(np.complex128),
+        g_tgt=np.transpose(traj.target_g[:, :s, :], (1, 0, 2)).astype(np.complex128),
+        p_max_watt=np.full(s, float(env_cfg.p_max_eval_watt)),
+    )
+
+
+def episode_length(traj, env_cfg) -> int:
+    """Berapa langkah yang benar-benar dijalankan env untuk lintasan ini.
+
+    Env memotong episode saat ``t >= episode_steps`` atau saat target keluar
+    ROI (``target_in_roi``). Keduanya **hanya** fungsi lintasan, bukan fungsi
+    aksi, sehingga panjang episode sama untuk semua metode dan bisa dihitung
+    di muka.
+    """
+    in_roi = np.asarray(traj.target_in_roi[0], dtype=bool)
+    limit = min(int(env_cfg.episode_steps), int(in_roi.shape[0]))
+    for t in range(1, limit):
+        if not in_roi[t]:
+            return t
+    return limit
+
+
+def precompute_oracle(store, cfg: dict, env_cfg, indices, seed: int = 0,
+                      verbose: bool = False) -> dict:
+    """Jalankan Oracle-GD sekali untuk seluruh (lintasan, langkah) set evaluasi.
+
+    Keputusan B3 hanya bergantung pada kanal sebenarnya pada langkah itu dan
+    pada P_max, yang tetap saat evaluasi (§8). Keputusannya karena itu **tidak**
+    bergantung pada seed derau, tracker, atau urutan episode, sehingga seluruh
+    himpunan dapat dioptimalkan sebagai satu batch dan dipakai ulang untuk
+    ketiga seed derau. Menjalankannya per episode akan mengulang pekerjaan yang
+    sama persis tiga kali.
+
+    :returns: ``{"decisions": {indeks: (phi, rho, weights)}, "clipped": frac}``
+    """
+    from . import oracle_gd
+
+    from .common import SystemConstants
+
+    const = SystemConstants.from_config(cfg)
+    settings = oracle_gd.OracleGDSettings.from_config(cfg)
+
+    lengths = {int(i): episode_length(store[int(i)], env_cfg) for i in indices}
+    snaps = [episode_snapshot(store[int(i)], store, env_cfg, lengths[int(i)])
+             for i in indices]
+    big = _concat_snapshots(snaps)
+    if verbose:
+        print(f"   B3: {len(snaps)} lintasan, {big.batch} langkah, "
+              f"{settings.restarts} restart x {settings.iterations} iterasi")
+    out = oracle_gd.optimize(big, const, settings, seed=int(seed),
+                             progress=verbose)
+
+    decisions, offset, outside = {}, 0, 0
+    total = 0
+    for i in indices:
+        n = lengths[int(i)]
+        phi = out["phi"][offset:offset + n]
+        rho = out["rho"][offset:offset + n]
+        w = out["weights"][offset:offset + n]
+        p_raw = _weights_to_raw(w)
+        outside += int(np.sum(np.abs(p_raw) > 1.0))
+        total += int(p_raw.size)
+        decisions[int(i)] = (phi, rho, w)
+        offset += n
+    return {"decisions": decisions, "lengths": lengths,
+            "clipped_fraction": outside / max(total, 1),
+            "oracle_reward_per_step": float(np.mean(out["reward"]))}
+
+
+def _concat_snapshots(snaps):
+    from .common import Snapshot
+    return Snapshot(
+        G=snaps[0].G, H=snaps[0].H, Hc=snaps[0].Hc,
+        hd_user=np.concatenate([s.hd_user for s in snaps]),
+        g_user=np.concatenate([s.g_user for s in snaps]),
+        hd_tgt_tx=np.concatenate([s.hd_tgt_tx for s in snaps]),
+        hd_tgt_rx=np.concatenate([s.hd_tgt_rx for s in snaps]),
+        g_tgt=np.concatenate([s.g_tgt for s in snaps]),
+        p_max_watt=np.concatenate([s.p_max_watt for s in snaps]),
+    )
+
+
+def _weights_to_raw(weights: np.ndarray) -> np.ndarray:
+    """Balik ``softmax`` ke ``p_raw`` yang diterima env.
+
+    ``softmax`` kebal terhadap pergeseran konstan, jadi logaritma bobot
+    dipusatkan dulu. Tanpa pemusatan, bobot seimbang (0,5; 0,5) akan menjadi
+    ``p_raw = (-0,69; -0,69)`` yang benar tetapi tidak perlu dekat ke batas
+    pemotongan env di [-1, 1]; setelah dipusatkan ia menjadi (0, 0).
+    """
+    logw = np.log(np.clip(np.asarray(weights, dtype=float), 1e-12, None))
+    return logw - np.mean(logw, axis=-1, keepdims=True)
+
+
+class OracleEnvPolicy(BaselineEnvPolicy):
+    """B3 (``hold_period = 1``) dan B4 (``hold_period = D``) dari keputusan beku.
+
+    Keputusan sudah dihitung oleh :func:`precompute_oracle`; kelas ini hanya
+    memutarnya kembali ke dalam env supaya metrik hilir -- panjang episode,
+    tracker, pemenuhan SCNR -- dihitung oleh mesin yang sama dengan metode lain.
+    Env harus dijalankan dengan ``perfect_csi=True`` dan
+    ``phase_update='absolute'``.
+    """
+
+    def __init__(self, decisions: dict, hold_period: int = 1,
+                 name: str | None = None):
+        self.decisions = decisions
+        self.hold_period = max(1, int(hold_period))
+        self.name = name or ("B3" if self.hold_period == 1
+                             else f"B4-D{self.hold_period}")
+        self._phi = self._rho = self._w = None
+
+    def reset(self, env) -> None:
+        from .oracle_gd import hold_decisions
+
+        phi, rho, w = self.decisions[int(env.trajectory_index)]
+        if self.hold_period > 1:
+            phi, rho, w = hold_decisions(phi, rho, w, self.hold_period)
+        self._phi, self._rho, self._w = phi, rho, w
+
+    def act(self, env) -> np.ndarray:
+        t = min(int(env.baseline_context()["step"]), len(self._phi) - 1)
+        delta = np.asarray(self._phi[t], dtype=float) / np.pi - 1.0
+        return np.concatenate([delta, [2.0 * float(self._rho[t]) - 1.0],
+                               _weights_to_raw(self._w[t])])

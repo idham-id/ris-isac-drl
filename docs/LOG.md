@@ -1795,3 +1795,139 @@ seluruhnya pada sensing: rate minimum keduanya ~8,2–8,4. Pilihannya:
    langkah masuk akal untuk RIS nyata.
 
 Belum diputuskan.
+
+## 2026-11-12 — Fase 6: evaluasi set test (E3, E4a, E4b, E5, E6), Gate 6 lolos
+
+Set test disentuh untuk pertama kalinya. Seluruh penyetelan sudah beku
+sebelumnya: ρ dan ω untuk B1/B2 dari grid val, checkpoint agen dari val (§6.1).
+Keduanya dicatat ulang di `results/eval/<hash>/meta.json`.
+
+### (a) B3/B4 tidak bisa lewat env apa adanya — ditambahkan `perfect_csi`
+
+§6.2 memberi B3/B4 "CSI dan posisi sempurna", tetapi `env.step` **selalu**
+membangun precoder dari `h_hat` ber-NMSE ε dan beam sensing dari posisi
+tracker. Menjalankan fasa B3 lewat env tanpa perubahan akan mengukur B3 yang
+dilumpuhkan, bukan B3.
+
+Ditambahkan `EnvConfig.perfect_csi` (default **mati**). Saat menyala,
+`_estimate_channel` mengembalikan kanal sebenarnya dan
+`_estimated_target_channel` mengembalikan `target_g` sebenarnya — persis yang
+dipakai `common.evaluate_decision` ketika `g_hat_tgt is None`. Agen dan B1/B2
+tidak pernah menyalakannya; ada tes yang menjaganya tetap mati secara default.
+
+**Verifikasi silang:** B3 lewat env memberi **+11,564** lawan **+11,571** di
+mesin snapshot — selisih 0,06%, seluruhnya dari pemotongan bobot daya ke kotak
+aksi env ([-1, 1] pada `p_raw`, 8,8% entri terpotong). Dua jalur hitung yang
+berbeda bertemu di angka yang sama; tidak ada yang perlu diubah di Oracle-GD.
+
+### (b) Panjang episode TIDAK bergantung pada keputusan
+
+`truncated` hanya membaca `target_in_roi` milik lintasan. Jadi semua metode
+berjalan pada langkah yang sama persis — yang membuat perbandingannya adil,
+dan yang memungkinkan B3 mengoptimalkan seluruh 1.846 langkah set test
+sekaligus (8,7 detik di GPU, sekali, dipakai ulang untuk ketiga seed derau).
+Komentar lama di `env_policy.py` dan `rollout.py` mengklaim sebaliknya;
+keduanya diperbaiki. Ada tes yang mencocokkan `episode_length` dengan env pada
+seluruh 50 lintasan test.
+
+### (c) T2 — hasil utama set test (Γ = 13 dB, P_max 30 dBm)
+
+| metode | episode | reward/langkah | rate min | pemenuhan SCNR | durasi track (s) | galat trk (m) |
+|---|---|---|---|---|---|---|
+| B1 | 150 | −1,120 | 4,024 | 0,353 | 3,11 | 1,07 |
+| B2 | 150 | +2,143 | 2,149 | 0,997 | 3,69 | 0,05 |
+| B3 | 150 | **+11,542** | 11,542 | 1,000 | 3,69 | 0,18 |
+| B4-D5 | 150 | +8,454 | 8,982 | 0,865 | 3,69 | 0,18 |
+| B4-D10 | 150 | +7,840 | 8,481 | 0,852 | 3,69 | 0,19 |
+| M1 | 450 | +3,590 | 8,183 | 0,398 | 3,09 | 1,05 |
+| M2 | 450 | +3,603 | 8,438 | 0,380 | 3,02 | 1,17 |
+| A1 | 450 | **+8,334** | 8,456 | 0,964 | 3,69 | 0,11 |
+
+**A1 jatuh di antara B4-D5 dan B4-D10.** Artinya kebijakan yang hanya melihat
+observasi parsial setara dengan oracle ber-CSI-sempurna yang keputusannya
+ditahan 5–10 langkah. Itu kalimat yang bisa dibawa ke paper.
+
+Val → test tidak menunjukkan overfitting: A1 +8,128 → +8,334; M1 +4,098 →
++3,590 (val dan test memang lintasan berbeda).
+
+### (d) E6 — ini argumen biaya yang sebenarnya, dan hampir salah dilaporkan
+
+| | waktu per keputusan |
+|---|---|
+| B2 geometris | 0,084 ms (CPU) |
+| **M1** | **0,144 ms** (CPU, observasi 696) |
+| M2 | 0,163 ms (CPU, observasi 2232) |
+| A1 | 0,141 ms (CPU) |
+| **B3 daring** | **2.054 ms** (GPU, 300 iterasi × 4 restart) |
+| B3 teramortisasi | 3,28 ms (1.846 langkah dibatch sekaligus) |
+
+B3 daring bukan sekadar 14.296× lebih mahal daripada M1 — pada Δt = 0,1 s ia
+**20× lebih lambat daripada waktu nyata**, jadi ia tidak bisa menjadi
+pengendali sama sekali. Angka 3,28 ms adalah biaya teramortisasi cara kerja
+acuan **offline**; melaporkan hanya itu akan membuat oracle tampak layak pakai.
+Keduanya dilaporkan, dengan bedanya dijelaskan.
+
+Latihan: M1 9,5 menit, M2 16,3 menit, A1 9,4 menit per seed (CPU).
+Prakomputasi ray tracing 8,7 menit (dari Fase 2, **tidak** diukur ulang).
+
+### (e) E4a — pemenuhan SCNR M1 terikat DAYA, bukan kecepatan
+
+| P_max (dBm) | 20 | 25 | 30 | 35 | 40 |
+|---|---|---|---|---|---|
+| M1 pemenuhan | 0,063 | 0,208 | 0,398 | 0,617 | 0,820 |
+| A1 pemenuhan | 0,709 | 0,897 | 0,964 | 0,990 | 0,998 |
+| M1 rate min | 6,13 | 7,36 | 8,18 | 8,67 | 8,87 |
+
+Kecepatan target hampir tidak berpengaruh: M1 memberi 0,411 / 0,385 / 0,404
+pada kelompok 1–3, 4–7, 8–10 m/s, dan hanya rate yang turun sedikit di
+kelompok tercepat (8,26 → 7,92). Jadi kesulitan M1 bukan "mengejar target
+cepat" melainkan menegakkan kendala sensing dengan anggaran daya yang ada.
+Kelompok kecepatan dihitung dengan memilah hasil E3, bukan rollout baru —
+hasilnya identik dengan biaya nol.
+
+### (f) E5 — ablasi di test sejalan dengan val
+
+| varian | reward/langkah | rate min | pemenuhan SCNR |
+|---|---|---|---|
+| M1 κ = 0,10 | +3,590 | 8,18 | 0,398 |
+| M1 κ = 0,25 | +3,353 | 8,34 | 0,375 |
+| M1 κ = 0,50 | +3,397 | 8,39 | 0,367 |
+| M2 (CSI penuh) | +3,603 | 8,44 | 0,380 |
+| A1 (absolut) | **+8,334** | 8,46 | **0,964** |
+
+Pemenuhan SCNR menurun monoton terhadap κ dan tidak pernah mendekati A1.
+Urutan reward κ = 0,25 dan 0,50 terbalik dibanding val, tetapi selisihnya
+(0,04) jauh di dalam ragam antar-seed — tidak ada yang bisa disimpulkan dari
+urutan itu, dan tidak perlu.
+
+### (g) Dua peringatan statistik yang harus masuk paper
+
+1. **Cohen's d di sini tidak berarti apa-apa.** Uji antar-seed menghasilkan
+   d = 10–73. Dengan n = 3 dan kebijakan yang sangat konsisten, simpangan baku
+   antar-seed nyaris nol sehingga pembaginya runtuh. Yang dilaporkan adalah
+   selisih dengan CI bootstrap; d jadi catatan kaki, bukan klaim.
+2. **Tiga "seed" baseline bukan tiga kebijakan**, melainkan tiga undian derau
+   atas kebijakan yang sama, sementara tiga seed agen adalah tiga kebijakan
+   berbeda. Uji M1 lawan B2/B4 karena itu membandingkan dua jenis ragam yang
+   berbeda. Dinyatakan di §9, bukan didiamkan.
+
+### (h) Durasi track memisahkan dua kelompok, tidak memeringkat di dalamnya
+
+B2, B3, B4, dan A1 **tidak pernah** kehilangan track (100% episode tersensor
+di panjang episode); B1, M1, dan M2 kehilangannya di sekitar 28% episode.
+Metrik ini karena itu berguna sebagai pemisah kasar, bukan sebagai peringkat
+halus. Fraksi tersensor ikut dilaporkan di T2.
+
+### (i) Catatan utang teknis: `config_hash` memakai SELURUH config
+
+Menambah satu kunci ke blok `evaluation:` akan mengubah `config_hash` dan
+membuat 21 run pelatihan yang sudah ada "hilang", padahal blok itu tidak
+memengaruhi pelatihan sama sekali. Masalah yang sama sudah dipecahkan untuk
+kanal lewat `channel_config_hash` dengan daftar bagian yang eksplisit.
+
+Di Fase 6 ini **tidak ada** kunci config baru yang dibutuhkan: kelompok
+kecepatan sudah ada di `mobility.speed_eval_bins_mps` dan sapuan P_max di
+`evaluation.p_max_eval_dbm`. Jadi tidak ada yang diubah. Tetapi `training_config_hash`
+yang sejajar dengan `channel_config_hash` layak dipertimbangkan di Fase 7 —
+beserta cara memindahkan direktori hasil tanpa merusak salinan `config.yaml`
+yang menjadi bukti provenans tiap run.

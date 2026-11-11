@@ -166,15 +166,45 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 ## Fase 6 — Evaluasi (minggu 6)
 
-- [ ] `src/risisac/eval/evaluate.py`: semua metode di 150 episode test (50 lintasan × 3 seed noise), seed tetap; hasil per langkah ke Parquet.
-- [ ] `src/risisac/eval/metrics.py`: rate minimum, pemenuhan SCNR, durasi track, galat tracker, CI bootstrap, Welch t-test.
-- [ ] E3 (P1) → T2, F5, F6.
-- [ ] E4b (P1): evaluasi semua metode pada Γ = 10, 13, 16 → F8.
-- [ ] E4a (P2): P_max dan kelompok kecepatan → F7.
-- [ ] E5, E6 (P2) → T3.
+- [x] `src/risisac/eval/evaluate.py`: semua metode di 150 episode test (50 lintasan × 3 seed derau), seed tetap; hasil per langkah ke Parquet.
+
+    Agen dievaluasi pada ketiga seed latihnya, jadi M1/M2/A1 masing-masing **450 episode**; baseline 150. Penyetelan B1/B2 dan pemilihan checkpoint (§6.1) selesai di val sebelum test disentuh, lalu dibekukan dan dicatat di `meta.json`.
+- [x] `src/risisac/eval/metrics.py`: rate minimum, pemenuhan SCNR, durasi track, galat tracker, CI bootstrap berkelompok, Welch t-test.
+- [x] **Jalur oracle di env.** §6.2 memberi B3/B4 "CSI dan posisi sempurna", tetapi env selalu memakai estimasi ber-NMSE dan beam sensing dari tracker, sehingga B3 tidak bisa lewat sana apa adanya. Ditambahkan `EnvConfig.perfect_csi` (default **mati**; agen dan B1/B2 tidak boleh menyalakannya). Dengan itu semua metode memakai mesin reward, lintasan, dan langkah yang sama.
+- [x] E3 (P1) → T2, F5, F6.
+- [x] E4b (P1): evaluasi semua metode pada Γ = 10, 13, 16 → F8.
+- [x] E4a (P2): P_max dan kelompok kecepatan → F7.
+- [x] E5, E6 (P2) → T3.
 - [ ] E7, E8 (P3) hanya jika masih ada waktu.
 
 **Gate 6:** T2, F5, F6, F8 lengkap.
+
+> **Status 2026-11-12: LOLOS.** T2, F5, F6, F8 dibuat; F7 dan T3 (P2) juga selesai. 175 tes lulus.
+>
+> **T2 — hasil utama set test** (Γ = 13 dB, P_max 30 dBm; reward dan rate per langkah):
+>
+> | metode | episode | reward/langkah | rate min | pemenuhan SCNR | durasi track (s) | galat tracker (m) |
+> |---|---|---|---|---|---|---|
+> | B1 | 150 | −1,120 | 4,024 | 0,353 | 3,11 | 1,07 |
+> | B2 | 150 | +2,143 | 2,149 | 0,997 | 3,69 | 0,05 |
+> | B3 | 150 | **+11,542** | 11,542 | 1,000 | 3,69 | 0,18 |
+> | B4-D5 | 150 | +8,454 | 8,982 | 0,865 | 3,69 | 0,18 |
+> | B4-D10 | 150 | +7,840 | 8,481 | 0,852 | 3,69 | 0,19 |
+> | M1 | 450 | +3,590 | 8,183 | 0,398 | 3,09 | 1,05 |
+> | M2 | 450 | +3,603 | 8,438 | 0,380 | 3,02 | 1,17 |
+> | A1 | 450 | **+8,334** | 8,456 | 0,964 | 3,69 | 0,11 |
+>
+> M1 mengalahkan B2 (+1,447; p = 0,006) dan kalah dari B4-D5 (−4,864; p = 0,0006). A1 duduk **di antara B4-D5 dan B4-D10**, yaitu setara oracle ber-CSI sempurna yang keputusannya ditahan 5–10 langkah — dicapai tanpa CSI sempurna sama sekali.
+>
+> **E6 — ini argumen biaya yang sebenarnya.** Satu keputusan M1 memakan **0,144 ms** di CPU; satu keputusan B3 daring memakan **2.054 ms** di GPU. B3 bukan hanya 14.000× lebih mahal, ia **20× lebih lambat daripada waktu nyata** pada Δt = 0,1 s, jadi ia tidak bisa menjadi pengendali sama sekali. Yang 3,28 ms adalah biaya teramortisasi saat 1.846 langkah dibatch sekaligus — itu cara kerja acuan offline, bukan cara kerja pengendali, dan melaporkan hanya angka itu akan menyesatkan.
+>
+> **E4a — pemenuhan SCNR M1 terikat daya, bukan kecepatan.** Dari 20 ke 40 dBm pemenuhan M1 naik 0,063 → 0,820; A1 sudah 0,709 di 20 dBm. Sebaliknya kecepatan target hampir tidak berpengaruh (M1: 0,411 / 0,385 / 0,404 pada 1–3, 4–7, 8–10 m/s), hanya rate yang turun sedikit di kelompok tercepat.
+>
+> **E5 — ablasi di test menegaskan hasil val.** κ = 0,10 / 0,25 / 0,50 memberi pemenuhan SCNR 0,398 / 0,375 / 0,367: menurun pelan, tidak pernah mendekati A1 (0,964). Fasa inkrementallah kendalanya.
+>
+> **Catatan statistik yang harus masuk paper.** Ukuran efek Cohen's d yang keluar dari uji antar-seed berada di kisaran 10–73, yang **tidak berarti apa-apa sebagai ukuran efek**: dengan n = 3 dan kebijakan yang sangat konsisten, ragam antar-seed nyaris nol sehingga pembaginya runtuh. Yang dilaporkan sebaiknya selisih beserta CI bootstrap, dengan d disebut hanya sebagai catatan kaki. Selain itu tiga "seed" B1–B4 adalah tiga undian derau atas kebijakan yang sama, sementara tiga seed M1/M2/A1 adalah tiga kebijakan berbeda — jadi uji M1 lawan baseline membandingkan dua sumber ragam yang berbeda jenis.
+>
+> **Durasi track tersensor.** B2, B3, B4, dan A1 **tidak pernah** kehilangan track (100% episode tersensor di panjang episode), sementara B1/M1/M2 kehilangannya di sekitar 28% episode. Metrik ini karena itu memisahkan dua kelompok dengan tajam tetapi tidak memeringkat di dalam kelompok atas.
 
 ---
 

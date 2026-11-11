@@ -112,6 +112,13 @@ class EnvConfig:
     ris_rows: int
     ris_cols: int
     roi_height: float
+    #: Jalur oracle (B3/B4, §6.2 "CSI dan posisi sempurna"). Mati secara
+    #: default: agen dan B1/B2 TIDAK boleh menyalakannya. Saat menyala,
+    #: precoder dibangun dari kanal efektif sebenarnya (tanpa NMSE ε) dan
+    #: beam sensing dari g_t sebenarnya (bukan dari model LoS ke posisi
+    #: tracker). Tracker tetap berjalan dan galatnya tetap dilaporkan, karena
+    #: ia adalah akibat hilir dari deteksi — bukan masukan keputusan B3.
+    perfect_csi: bool = False
 
     @classmethod
     def from_config(cls, cfg: dict, observation_mode: str | None = None) -> "EnvConfig":
@@ -221,6 +228,26 @@ class RisIsacEnv(gym.Env):
         return self._G
 
     @property
+    def H(self) -> np.ndarray:
+        """Kanal RIS -> BS-rx (Nr, M); dibutuhkan Oracle-GD (§6.2)."""
+        return self._H
+
+    @property
+    def Hc(self) -> np.ndarray:
+        """Kanal langsung BS-tx -> BS-rx (Nr, Nt); dibutuhkan Oracle-GD."""
+        return self._Hc
+
+    @property
+    def trajectory(self):
+        """Lintasan episode berjalan, atau ``None`` sebelum ``reset()``."""
+        return self._traj
+
+    @property
+    def p_max_watt(self) -> float:
+        """P_max episode berjalan dalam Watt."""
+        return float(self._p_max)
+
+    @property
     def episode_counter(self) -> int:
         """Berapa kali ``reset()`` sudah dipanggil (mulai dari 0)."""
         return self._episode_counter
@@ -264,6 +291,8 @@ class RisIsacEnv(gym.Env):
         hanya rata-rata -- pengguna lemah kalau tidak akan punya estimasi yang
         jauh lebih baik daripada yang dimaksud desain.
         """
+        if self.cfg.perfect_csi:
+            return np.array(h_true, dtype=complex, copy=True)
         power = np.sum(np.abs(h_true) ** 2, axis=-1, keepdims=True)
         scale = np.sqrt(self.cfg.eff_channel_nmse * power / h_true.shape[-1] / 2.0)
         noise = scale * (self._rng.normal(size=h_true.shape)
@@ -271,7 +300,15 @@ class RisIsacEnv(gym.Env):
         return h_true + noise
 
     def _estimated_target_channel(self) -> np.ndarray:
-        """g_hat_t: model LoS gelombang sferis ke estimasi posisi tracker."""
+        """g_hat_t: model LoS gelombang sferis ke estimasi posisi tracker.
+
+        Pada jalur oracle (``perfect_csi``) yang dikembalikan adalah g_t
+        SEBENARNYA pada langkah berjalan, sama seperti yang dipakai
+        ``baselines.common.evaluate_decision`` ketika ``g_hat_tgt is None``.
+        """
+        if self.cfg.perfect_csi:
+            t = min(self._t, self._traj.target_g.shape[1] - 1)
+            return self._traj.target_g[0, t, :].astype(np.complex128)
         xy = self._tracker.position
         point = np.array([xy[0], xy[1], self.cfg.roi_height])
         return spherical_steering(self._ris_xyz, point, self.cfg.wavelength,

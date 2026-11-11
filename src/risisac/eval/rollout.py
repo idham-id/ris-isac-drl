@@ -8,10 +8,13 @@ baseline berjalan pada env mentah (ia tidak membaca observasi sama sekali);
 keduanya menghasilkan rekaman per langkah dengan bentuk yang sama.
 
 **Reward per LANGKAH yang dibandingkan, bukan per episode.** Episode berakhir
-saat target meninggalkan ROI, jadi panjangnya berbeda antar-lintasan dan --
-lebih penting -- bisa berbeda antar-metode. Reward per episode akan memberi
-nilai lebih tinggi kepada metode yang kebetulan membuat episode berlangsung
-lebih lama, padahal yang ingin diukur adalah kualitas keputusan per langkah.
+saat target meninggalkan ROI, jadi panjangnya berbeda antar-lintasan: pada set
+test 18 sampai 50 langkah (rata-rata 36,9). Panjang itu ditentukan lintasan, bukan keputusan, sehingga
+semua metode berjalan pada langkah yang sama persis. Yang tetap bermasalah
+adalah **rata-rata reward per episode**: ia memberi bobot sama kepada episode
+11 langkah dan episode 50 langkah, sehingga nilainya ikut bergeser bila
+komposisi panjang lintasan berubah. Reward per langkah tidak punya masalah itu
+dan menjawab pertanyaan yang dimaksud: seberapa baik satu keputusan.
 """
 
 from __future__ import annotations
