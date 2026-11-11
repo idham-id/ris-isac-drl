@@ -1573,3 +1573,138 @@ dibanding 15 run x 1e6 langkah yang disaringnya.
   VecNormalize.
 
 ---
+
+## 2026-11-11 (k) — Fase 5: 15 run pelatihan; Gate 5 LOLOS, dengan satu temuan besar
+
+### Yang dibangun
+
+`src/risisac/train/train.py` (M1/M2/A1 dari satu config), `src/risisac/env/vec.py`
+(`env_overrides`), `src/risisac/baselines/env_policy.py` (B1/B2 sebagai
+kebijakan di dalam env), `src/risisac/eval/rollout.py` (satu mesin rollout
+untuk semua metode), `plot_f4_training`, `scripts/run_all_training.sh`,
+`scripts/run_gate5_check.py`, `configs/gamma10.yaml`, `configs/gamma16.yaml`.
+152 tes lulus (dari 142).
+
+Metode diterapkan lewat `env_overrides` pada `EnvConfig`, **bukan** dengan
+mengubah dict config: kalau metode mengubah config, `config_hash` ikut berubah
+dan hasil tiga metode dari satu config tersebar ke tiga direktori yang tampak
+tidak berhubungan.
+
+**Baseline dipindah ke dalam env.** Fase 3 mengevaluasi B1/B2 pada snapshot
+lepas; Gate 5 membandingkan pada episode. Dua hal baru muncul di env: estimasi
+target datang dari tracker Kalman (kualitasnya bergantung keputusan
+sebelumnya), dan panjang episode bergantung keputusan. Keduanya bagian dari
+masalah yang diklaim paper, jadi angka baseline untuk paper diambil dari jalur
+ini. Hasilnya cocok dengan Fase 3: B2 memberi +2,261 lewat env lawan +2,275
+pada snapshot, dengan omega dan rho terpilih yang identik (0,75; 0,1).
+
+**Bug ditemukan saat menulis tesnya:** RNG baseline semula diturunkan dari
+penghitung episode env, sehingga hasil B1 pada satu lintasan bergantung pada
+berapa episode yang kebetulan dijalankan sebelumnya — terukur menggeser
+reward/langkah **0,26** antara sapuan grid dan evaluasi akhir, padahal
+keputusannya sama. Diganti ke indeks lintasan; sekarang keduanya cocok sampai
+1e-6.
+
+### Gate 5 — LOLOS (config base, Gamma = 13 dB)
+
+Kriteria "reward val naik < 2% dalam 20% langkah terakhir" tidak terdefinisi
+apa adanya: reward mulai negatif dan berakhir positif, jadi "naik 2%" relatif
+terhadap nilai awal bisa berarti apa saja. Yang dipakai dan dicatat:
+kenaikan 20% langkah terakhir dibagi total kenaikan sejak langkah 0.
+
+| kriteria | hasil |
+|---|---|
+| m1_converged | ekor **-1,46%** dari kenaikan total (ambang 2%) |
+| m1_beats_b1 | **+3,783** lawan -0,750 |
+| m1_beats_b2 | **+3,783** lawan +2,261 |
+
+Hasil val (reward/langkah, rate minimum, pemenuhan SCNR):
+
+| metode | reward | min rate | SCNR med | deteksi | rho |
+|---|---|---|---|---|---|
+| B1 | -0,750 | 4,08 | 10,0 | 0,345 | 0,100 |
+| B2 | +2,261 | 2,27 | 34,7 | **0,998** | 0,100 |
+| M1 | +3,783 | 8,26 | 10,9 | 0,408 | 0,003 |
+| M2 | +3,910 | 8,36 | 11,0 | 0,413 | 0,001 |
+| A1 | +5,769 | 8,44 | 14,4 | 0,567 | 0,002 |
+| B3 (Fase 3) | +11,63 | 11,63 | 18,0 | 1,000 | — |
+
+### Temuan: kendala fasa INKREMENTAL yang mengorbankan sensing, bukan lambda
+
+Pada mulanya ini tampak seperti masalah bobot reward: ketiga agen menurunkan
+rho ke ~0,00 dan membiarkan SCNR di bawah Gamma, menukar ~3 dB defisit (biaya
+3 bit/s/Hz pada lambda = 10) dengan ~6 bit/s/Hz rate di atas B2. Rasional,
+tetapi merusak premis ISAC: B2 memenuhi SCNR di 99,8% langkah, M1 hanya 40,8%.
+
+**Lambda bukan penyebabnya.** F4 dan checkpoint menunjukkan A1 — yang memakai
+lambda yang sama persis — mencapai **deteksi 0,95-0,96 dengan rate 8,4** di
+sekitar 350-450 ribu langkah, pada ketiga seed:
+
+| run | puncak val | @langkah | deteksi@puncak | akhir | deteksi@akhir |
+|---|---|---|---|---|---|
+| A1 seed 0 | **+8,220** | 350 rb | **0,960** | +6,442 | 0,627 |
+| A1 seed 1 | **+8,026** | 450 rb | **0,949** | +5,464 | 0,529 |
+| A1 seed 2 | **+8,139** | 350 rb | **0,948** | +5,400 | 0,546 |
+| M1 seed 0-2 | +3,76 .. +4,38 | 700-950 rb | 0,42-0,46 | +3,44 .. +4,25 | 0,39-0,43 |
+
+Jadi solusi ISAC yang baik ADA dan dapat ditemukan agen dengan reward ini —
+tetapi hanya saat fasa boleh diatur **absolut**. Dengan pembaruan inkremental
+(kappa = 0,1), M1 dan M2 tidak pernah melewati deteksi 0,46 pada seed mana pun.
+
+Dua hal yang mengikat pada mode inkremental: dari fasa acak, menggeser satu
+elemen sejauh pi butuh 10 langkah pada 0,1 pi/langkah, yaitu sekitar 29% dari
+episode 35 langkah; dan profil fokus harus terus dikejar karena targetnya
+bergerak. Terukur, SCNR M1 memang **menurun** sepanjang episode (median 17,2 dB
+di t = 0 menjadi ~9,4 dB di t = 20 dan 7,3 dB di t = 48), sementara B2 yang
+menghitung ulang fasanya dari geometri tiap langkah bertahan di 34,7 dB.
+
+### Temuan: A1 ambruk setelah puncaknya (dan model akhir yang dilaporkan)
+
+Ketiga seed A1 ambruk dari ~8,1 ke 4,0 antara 0,45 dan 0,8 juta langkah, lalu
+pulih sebagian ke 5,4-6,4. Rate-nya TIDAK berubah (8,4 sebelum dan sesudah);
+yang hilang hanya sensing (deteksi 0,95 -> 0,55). Jadi kebijakan akhir bukan
+hasil tukar-tambah yang rasional, melainkan degradasi.
+
+Konsekuensinya: menyimpan dan melaporkan **model akhir** membuat A1 dilaporkan
+2,7 poin di bawah yang benar-benar dicapainya. Pemilihan model pada split val
+adalah praktik baku dan §6.1 memang menyediakan val untuk itu.
+
+Kendalanya teknis: `CheckpointCallback` saat ini tidak menyimpan `VecNormalize`
+bersama checkpoint, sedangkan `obs_rms` terus berubah selama pelatihan.
+Terukur pada A1 seed 0 di 350 rb: dengan statistik SAAT ITU reward +8,220;
+dengan statistik AKHIR +7,180 (deteksi tetap 0,960, yang turun rate-nya
+8,41 -> 7,35). Jadi pemilihan checkpoint butuh `save_vecnormalize=True` dan
+pelatihan ulang; tanpa itu ada kerugian sekitar 1 poin.
+
+### E4b (Gamma = 10 dan 16): belum konvergen
+
+| config | reward M1 | min rate | deteksi | ekor |
+|---|---|---|---|---|
+| Gamma = 10 | +6,044 | 8,40 | 0,603 | +2,09% (belum) |
+| Gamma = 13 | +3,783 | 8,26 | 0,408 | -1,46% (konvergen) |
+| Gamma = 16 | +2,808 | 8,08 | 0,346 | +7,85% (belum) |
+
+Arahnya benar untuk F8 (deteksi naik saat Gamma turun), tetapi dua dari tiga
+titik belum konvergen pada 1e6 langkah.
+
+### Operasional
+
+* **Paralelisme terukur:** JOBS=1 memberi 2.069 langkah/detik; JOBS=3 memberi
+  1.704 per run = 5.112 agregat; **JOBS=4 gagal** — keempatnya mati dengan
+  "The paging file is too small" saat mengimpor torch (36 proses sekaligus,
+  masing-masing menarik torch lewat `stable_baselines3/__init__.py`).
+* **JOBS=4 yang gagal meracuni percobaan berikutnya.** Yang mati adalah proses
+  PEKERJA; induknya menggantung menunggu pipa yang tidak pernah menjawab.
+  **29 proses yatim bertahan memegang 16 GB selama 1 jam 40 menit tanpa gejala
+  apa pun** selain log yang berhenti bertambah, dan membuat antrean JOBS=3
+  berikutnya ikut gagal. Bila sebuah run mati dengan MemoryError, periksa
+  proses yatim sebelum mencoba lagi.
+* **Jangan menyunting skrip shell selagi ia berjalan.** bash membaca skrip
+  berdasarkan offset byte; menambah 12 baris di tengah jalan membuat antrean
+  mati di run ke-13 dengan `local: can only be used in a function`. Run yang
+  sudah berjalan tidak terpengaruh.
+* Waktu: M1/A1/Gamma-sweep 9,4 menit per run (1.775 langkah/detik); **M2 16,3
+  menit** (1.025 langkah/detik) karena observasinya 3,2x lebih besar
+  (558 x 4 lawan 174 x 4). Catat untuk T3 (biaya komputasi, E6).
+
+---

@@ -144,6 +144,24 @@ def channel_config_hash(cfg: dict, length: int = 12) -> str:
     return config_hash(channel_config_subset(cfg), length)
 
 
+def git_commit() -> str:
+    """Commit HEAD, atau "" bila git tidak tersedia.
+
+    Dipakai untuk mencap setiap file hasil (CLAUDE.md: hasil disimpan beserta
+    salinan config dan git commit).
+    """
+    import subprocess
+    for exe in ("git", r"C:\Program Files\Git\cmd\git.exe"):
+        try:
+            out = subprocess.run([exe, "rev-parse", "HEAD"], cwd=str(REPO_ROOT),
+                                 capture_output=True, text=True, timeout=10)
+            if out.returncode == 0:
+                return out.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return ""
+
+
 def noise_power_watt(cfg: dict) -> float:
     """Daya derau per antena terima [W].
 

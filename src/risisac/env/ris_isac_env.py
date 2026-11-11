@@ -212,7 +212,23 @@ class RisIsacEnv(gym.Env):
         self._H = store.H.astype(np.complex128)
         self._Hc = store.Hc.astype(np.complex128)
         self._traj = None
+        self._episode_counter = -1
         self._reset_state()
+
+    @property
+    def G(self) -> np.ndarray:
+        """Kanal BS-tx -> RIS (M, Nt); dibutuhkan baseline geometris (§6.2)."""
+        return self._G
+
+    @property
+    def episode_counter(self) -> int:
+        """Berapa kali ``reset()`` sudah dipanggil (mulai dari 0)."""
+        return self._episode_counter
+
+    @property
+    def trajectory_index(self) -> int:
+        """Indeks lintasan episode berjalan."""
+        return int(self._traj_index)
 
     @property
     def _rng(self) -> np.random.Generator:
@@ -224,6 +240,7 @@ class RisIsacEnv(gym.Env):
     # --------------------------------------------------------------- internal
     def _reset_state(self) -> None:
         self._t = 0
+        self._traj_index = -1
         self._phi_prev = np.zeros(self.cfg.num_elements)
         self._rho_prev = 0.0
         self._h_hat = np.zeros((self.cfg.num_users, self.cfg.num_tx), complex)
@@ -323,9 +340,32 @@ class RisIsacEnv(gym.Env):
         return np.clip(np.round(db / step) * step, lo, hi)
 
     # ------------------------------------------------------------------- API
+    def baseline_context(self) -> dict:
+        """Informasi yang dilihat baseline B1/B2 pada awal langkah (§6.2).
+
+        B1 dan B2 bukan jaringan: keduanya tidak membaca vektor observasi,
+        melainkan menghitung fasa dari geometri. Supaya keduanya tetap memakai
+        informasi yang SAMA dengan agen -- bukan CSI sempurna -- yang diberikan
+        di sini hanya: indeks langkah, posisi SEBENARNYA pengguna (pemanggil
+        menambahkan galatnya sendiri dengan sigma yang sama seperti §5.2),
+        estimasi kanal RIS->target dari tracker, dan P_max episode.
+
+        ``g_hat_tgt`` sengaja diambil di SINI, sebelum ``step``: env membangun
+        beam sensing dari state tracker di awal langkah lalu memperbarui
+        tracker di akhir (§5.1). Mengambilnya setelah ``step`` menggeser
+        baseline satu langkah dan menyelundupkan informasi masa depan.
+        """
+        t = min(self._t, self._traj.target_pos.shape[1] - 1)
+        return {"step": int(self._t),
+                "user_pos": self._traj.user_pos[:, t, :2].copy(),
+                "target_pos": self._traj.target_pos[0, t, :2].copy(),
+                "g_hat_tgt": self._estimated_target_channel(),
+                "p_max_watt": float(self._p_max)}
+
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
         self._reset_state()
+        self._episode_counter += 1
 
         options = options or {}
         index = options.get("trajectory_index")

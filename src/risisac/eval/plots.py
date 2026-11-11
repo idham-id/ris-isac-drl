@@ -270,3 +270,59 @@ def plot_f3_e0(table: dict, out_path, tolerance_db: float = 0.1):
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
     return out_path
+
+
+# Warna tetap per metode: dipakai F4 sekarang dan gambar evaluasi nanti,
+# supaya pembaca tidak perlu membaca ulang legenda di tiap gambar.
+METHOD_COLORS = {
+    "M1": OKABE_ITO["blue"],
+    "M2": OKABE_ITO["vermillion"],
+    "A1": OKABE_ITO["green"],
+    "B1": OKABE_ITO["purple"],
+    "B2": OKABE_ITO["orange"],
+    "B3": TEXT_MUTED,
+}
+
+
+def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
+                     metric: str = "reward_per_step",
+                     ylabel: str = "reward val per langkah"):
+    """F4 - kurva pelatihan M1, M2, A1 (rata-rata +- std antar-seed, Sec 9).
+
+    :param curves: ``{paper_id: {"timesteps": [...], "seeds": {seed: [...]}}}``
+    :param baselines: ``{nama: nilai}`` digambar sebagai garis mendatar.
+
+    Pita adalah std ANTAR-SEED, bukan interval kepercayaan: dengan n = 3 seed
+    (Sec 9) pita CI akan lebar dan menyesatkan; std antar-seed menjawab
+    pertanyaan yang memang ingin dijawab kurva pelatihan, yaitu seberapa
+    bergantung hasilnya pada seed.
+    """
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(7.0, 4.4), constrained_layout=True)
+    for paper_id, curve in curves.items():
+        steps = np.asarray(curve["timesteps"], dtype=float)
+        values = np.asarray([curve["seeds"][s] for s in sorted(curve["seeds"])],
+                            dtype=float)
+        mean, std = values.mean(axis=0), values.std(axis=0)
+        color = METHOD_COLORS.get(paper_id, OKABE_ITO["black"])
+        ax.plot(steps / 1e6, mean, color=color, lw=1.8,
+                label=f"{paper_id} ({values.shape[0]} seed)")
+        ax.fill_between(steps / 1e6, mean - std, mean + std, color=color,
+                        alpha=0.18, lw=0)
+    for name, value in (baselines or {}).items():
+        ax.axhline(float(value), color=METHOD_COLORS.get(name, TEXT_MUTED),
+                   ls="--", lw=1.2)
+        ax.annotate(f"{name} {float(value):+.2f}",
+                    xy=(ax.get_xlim()[1], float(value)),
+                    xytext=(-4, 3), textcoords="offset points",
+                    ha="right", va="bottom", fontsize=8,
+                    color=METHOD_COLORS.get(name, TEXT_MUTED))
+    ax.set_xlabel("langkah lingkungan (juta)")
+    ax.set_ylabel(ylabel)
+    ax.set_title("F4 - kurva pelatihan pada split val")
+    ax.legend(frameon=False, loc="lower right")
+    _style_axes(ax)
+    fig.savefig(out_path, dpi=200)
+    plt.close(fig)
+    return out_path

@@ -114,11 +114,19 @@ Rujukan (E1)–(E9), §, dan prioritas P1/P2/P3 mengacu ke `docs/EXPERIMENT_DESI
 
 ## Fase 5 — Pelatihan E2 dan E4b (minggu 5)
 
-- [ ] `src/risisac/train/train.py --config ... --method {ppo_po, ppo_full} --seed ...`: simpan model, `VecNormalize`, log CSV/TensorBoard, checkpoint, evaluasi val setiap 50 ribu langkah.
-- [ ] `scripts/run_all_training.sh`: antrean 15 run (M1, M2, A1 × 3 seed; M1 Γ = 10 dan 16 × 3 seed), bisa dilanjutkan. Jalankan di CPU, 2–3 run paralel sesuai jumlah core.
-- [ ] Gambar F4.
+- [x] `src/risisac/train/train.py --config ... --method {ppo_po, ppo_full, ppo_po_absolute} --seed ...`: simpan model, `VecNormalize`, log CSV/TensorBoard, checkpoint, evaluasi val setiap 50 ribu langkah.
+- [x] `scripts/run_all_training.sh`: antrean 15 run (M1, M2, A1 × 3 seed; M1 Γ = 10 dan 16 × 3 seed), bisa dilanjutkan. Jalankan di CPU, 2–3 run paralel sesuai jumlah core.
+
+    Paralelisme **diukur**: JOBS=1 → 2.069 langkah/detik; JOBS=3 → 1.704 per run = 5.112 agregat; **JOBS=4 gagal** (36 proses × torch melewati batas memori commit Windows). Satu run 9,4 menit untuk observasi 696, **16,3 menit** untuk M2 (observasi 2232).
+- [x] Gambar F4 (`results/gate5/<config_hash>/F4_training.png`).
 
 **Gate 5:** M1 konvergen (reward val naik < 2% dalam 20% langkah terakhir) dan mengalahkan B1 serta B2 di val. Jika gagal di pertengahan minggu, terapkan mitigasi §10: inisialisasi dari B2, kurikulum target diam → bergerak, κ lebih kecil.
+
+> Kriteria "naik < 2%" tidak terdefinisi apa adanya (reward mulai negatif, berakhir positif), jadi dibuat eksplisit: **kenaikan 20% langkah terakhir dibagi total kenaikan sejak langkah 0**. Bebas skala dan aman melewati nol; angka mentahnya ikut dilaporkan.
+
+> **Status 2026-11-11: LOLOS** (config base, Γ = 13 dB). M1 ekor −1,46% (ambang 2%); M1 **+3,783** lawan B1 −0,750 dan B2 **+2,261**. F4 dibuat dari tiga seed per metode.
+>
+> **Terbuka — belum diputuskan, lihat `docs/LOG.md` 2026-11-11 (k):** (1) M1/M2 memenuhi SCNR hanya di **41%** langkah sementara B2 di 99,8%; penyebabnya **bukan** λ melainkan kendala fasa inkremental — A1 dengan λ yang sama mencapai deteksi **0,95–0,96 dengan rate 8,4** di 350–450 ribu langkah pada ketiga seed. (2) Ketiga seed A1 lalu **ambruk** ke deteksi ~0,55 dengan rate tak berubah, sehingga melaporkan model AKHIR menempatkan A1 2,7 poin di bawah yang dicapainya; pemilihan model pada val membutuhkan `save_vecnormalize=True` dan pelatihan ulang. (3) M1 pada Γ = 10 dan 16 belum konvergen (ekor +2,09% dan +7,85%).
 
 ---
 

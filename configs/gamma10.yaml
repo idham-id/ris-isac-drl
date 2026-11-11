@@ -1,0 +1,10 @@
+# E4b (docs/EXPERIMENT_DESIGN.md Sec 7): M1 dilatih ulang pada Gamma = 10 dB.
+# Hanya ambang SCNR yang berubah; seluruh kanal identik dengan base, sehingga
+# channel_config_hash tidak berubah dan basis data HDF5 dipakai ulang.
+defaults: [base]
+
+experiment:
+  name: gamma10
+
+sensing:
+  scnr_threshold_db: 10.0
