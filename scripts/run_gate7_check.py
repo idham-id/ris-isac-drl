@@ -34,11 +34,16 @@ from risisac.config import config_hash, git_commit, load_config  # noqa: E402
 #: F2b dihapus di Fase 8: peta radar terpisah menjadi mubazir setelah F2
 #: diganti menjadi dua panel (penguatan komunikasi, SNR radar berkontur
 #: Gamma). Delapan artefak gambar, bukan sembilan.
+#: Fase 10: T3 dipecah menjadi T3_ablation + T6_latency, dan dua tabel baru
+#: ditambahkan (T5 perilaku per langkah, T_baselines ikhtisar metode §6).
+#: Tujuh tabel, bukan empat.
 EXPECTED_FIGURES = ("F1_layout", "F2_coverage", "F3_e0",
                     "F4_training", "F5_rate_cdf", "F6_episode",
                     "F7_pmax_speed", "F8_tradeoff")
 EXPECTED_TABLES = ("T1_channel_validation.tex", "T2_main_results.tex",
-                   "T3_ablation_cost.tex", "T4_parameters.tex")
+                   "T3_ablation.tex", "T4_parameters.tex",
+                   "T5_behaviour.tex", "T6_latency.tex",
+                   "T_baselines.tex")
 
 
 def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:

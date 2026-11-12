@@ -40,7 +40,7 @@ sys.path.insert(0, str(REPO / "src"))
 
 from risisac.config import (channel_config_hash, config_hash,     # noqa: E402
                             git_commit, load_config)
-from risisac.eval import tables                                   # noqa: E402
+from risisac.eval import metrics, tables                          # noqa: E402
 from risisac.eval.plots import (plot_f1_layout, plot_f2_coverage,  # noqa: E402
                                 plot_f3_e0,
                                 plot_f4_training, plot_f5_rate_cdf,
@@ -150,6 +150,10 @@ def main() -> int:
     p_max = float(cfg["radio"]["p_max_dbm"])
     skip = {s.upper() for s in args.skip}
     made, sources = [], {}
+    # Angka yang dulu hidup di JUDUL gambar (Fase 10). Judulnya pindah ke
+    # caption naskah, jadi angkanya harus ikut pindah ke suatu tempat yang
+    # masih satu sumber dengan gambarnya; ia ditulis ke manifest.json.
+    facts: dict = {}
 
     print(f"config      : {args.config} ({chash})")
     print(f"kanal       : {channel_config_hash(cfg)}")
@@ -168,7 +172,7 @@ def main() -> int:
             place = Placement.from_config(cfg)
             share = float(data["los_ris_roi"].mean())
             made += both(out_dir, "F1_layout", lambda p: plot_f1_layout(
-                spec, place, p, los_ris_fraction=share))
+                spec, place, p, los_ris_fraction=share, facts=facts))
         if "F2" not in skip:
             p_values = list(data["p_max_dbm_values"])
             which = p_values.index(p_max) if p_max in p_values else 0
@@ -187,7 +191,7 @@ def main() -> int:
                 data["scnr_direct_mrt_db"][which], p,
                 m_elements=m_elements, p_max_dbm=p_dbm,
                 gain_threshold_db=float(cfg["gate1"]["ris_gain_threshold_db"]),
-                gamma_db=gamma))
+                gamma_db=gamma, facts=facts))
 
     # ------------------------------------------------------------- F3, T1 (E0)
     if "F3" not in skip or "T1" not in skip:
@@ -201,7 +205,8 @@ def main() -> int:
             loaded["_synthetic_delta_db"] = np.load(
                 e0_dir / "e0_synthetic_delta_db.npy")
             made += both(out_dir, "F3_e0", lambda p: plot_f3_e0(
-                loaded, p, tolerance_db=float(t1["tolerance_db"])))
+                loaded, p, tolerance_db=float(t1["tolerance_db"]),
+                facts=facts))
         if "T1" not in skip:
             made.append(write(out_dir, "T1_channel_validation.tex",
                               tables.t1_channel_validation(t1)))
@@ -217,7 +222,7 @@ def main() -> int:
         sources["gate5"] = {"dir": str(gate5.parent)}
         bases = {k: v["reward_per_step"] for k, v in g5["baselines"].items()}
         made += both(out_dir, "F4_training", lambda p: plot_f4_training(
-            g5["curves"], p, baselines=bases))
+            g5["curves"], p, baselines=bases, facts=facts))
         print(f"Gate 5      : {gate5.parent.name}")
 
     # --------------------------------------------------- F5..F8, T2, T3 (eval)
@@ -241,7 +246,7 @@ def main() -> int:
         made += both(out_dir, "F6_episode", lambda p: plot_f6_episode(
             steps, p, index, scnr_threshold_db=gamma,
             sigma_max_m=float(cfg["observation"]["target_pos_max_std_m"]),
-            dt_s=float(cfg["mobility"]["dt_s"])))
+            dt_s=float(cfg["mobility"]["dt_s"]), facts=facts))
     if "F7" not in skip and (eval_dir / "E4a.csv").exists():
         bins = [list(map(float, b))
                 for b in cfg["mobility"]["speed_eval_bins_mps"]]
@@ -255,7 +260,7 @@ def main() -> int:
         points = json.loads((eval_dir / "F8_points.json")
                             .read_text(encoding="utf-8"))
         made += both(out_dir, "F8_tradeoff",
-                     lambda p: plot_f8_tradeoff(points, p))
+                     lambda p: plot_f8_tradeoff(points, p, facts=facts))
     elif "F8" not in skip:
         print("  [!] F8_points.json belum ada; F8 dilewati "
               "(python scripts/run_gate6_check.py)")
@@ -266,24 +271,64 @@ def main() -> int:
                           tables.t2_main_results(t2, gamma, p_max)))
     if "T3" not in skip:
         e5_path = eval_dir / "T3_e5_ablation.csv"
-        cost_path = eval_dir / "T3_e6_cost.json"
-        if e5_path.exists() and cost_path.exists():
-            made.append(write(
-                out_dir, "T3_ablation_cost.tex",
-                tables.t3_ablation_cost(
-                    pd.read_csv(e5_path),
-                    json.loads(cost_path.read_text(encoding="utf-8")))))
+        if e5_path.exists():
+            made.append(write(out_dir, "T3_ablation.tex",
+                              tables.t3_ablation(pd.read_csv(e5_path))))
         else:
             print("  [!] T3 dilewati (python scripts/run_e5_e6.py)")
+    if "T6" not in skip:
+        cost_path = eval_dir / "T3_e6_cost.json"
+        if cost_path.exists():
+            made.append(write(out_dir, "T6_latency.tex", tables.t6_latency(
+                json.loads(cost_path.read_text(encoding="utf-8")))))
+        else:
+            print("  [!] T6 dilewati (python scripts/run_e5_e6.py)")
+
+    # ------------------------------------------------------- T5 (Fase 10)
+    # Dihitung ulang dari steps.parquet dan episodes.parquet yang SUDAH ada:
+    # ini agregasi, bukan rollout baru, jadi ia tetap di dalam aturan "satu
+    # perintah, tanpa menghitung ulang apa pun". CSV-nya ditulis ke direktori
+    # evaluasi (ia data hasil, bukan artefak naskah); tabel LaTeX-nya ke
+    # direktori naskah.
+    episode_stats = metrics.episode_length_stats(episodes)
+    if "T5" not in skip:
+        behaviour = metrics.behaviour_table(steps, gamma,
+                                            order=tables.METHOD_ORDER)
+        behaviour.to_csv(eval_dir / "T5_behaviour.csv")
+        t5_tests = metrics.pairwise_tests(episodes)
+        (eval_dir / "T5_tests.json").write_text(
+            json.dumps(t5_tests, indent=2, default=str), encoding="utf-8")
+        made.append(write(out_dir, "T5_behaviour.tex",
+                          tables.t5_behaviour(behaviour, gamma, t5_tests)))
+        print(f"T5          : {eval_dir.name}/T5_behaviour.csv, "
+              f"{len(t5_tests)} uji Welch -> T5_tests.json")
+    if "TBASELINES" not in skip:
+        made.append(write(out_dir, "T_baselines.tex", tables.baselines_table()))
     if "T4" not in skip:
+        # Anggaran langkah sapuan Gamma dibaca dari config sapuannya sendiri,
+        # bukan diketik ulang: §6.1 dan T4 sempat tampak berselisih (2e6
+        # lawan 1e6) justru karena keduanya ditulis terpisah.
+        sweep = {}
+        for name in ("gamma10", "gamma16"):
+            if (REPO / "configs" / f"{name}.yaml").exists():
+                sweep_cfg = load_config(name)
+                sweep[float(sweep_cfg["sensing"]["scnr_threshold_db"])] = \
+                    float(sweep_cfg["training"]["total_timesteps"])
         made.append(write(out_dir, "T4_parameters.tex",
-                          tables.parameter_table(cfg)))
+                          tables.parameter_table(cfg, episode_stats,
+                                                 sweep or None)))
 
     (out_dir / "manifest.json").write_text(json.dumps({
         "config": args.config, "config_hash": chash,
         "channel_config_hash": channel_config_hash(cfg),
         "git_commit": git_commit(), "artifacts": sorted(made),
         "sources": sources, "skipped": sorted(skip),
+        # Angka yang dipindahkan dari judul gambar ke caption naskah, beserta
+        # statistik panjang episode yang dipakai tabel parameter. Ditulis di
+        # sini supaya penulis caption mengambilnya dari berkas yang sama
+        # dengan gambarnya, bukan mengetik ulang dari layar.
+        "caption_facts": facts,
+        "episode_length": episode_stats,
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
     }, indent=2, default=str), encoding="utf-8")
 

@@ -2261,3 +2261,257 @@ bukan ≥ 80% yang dihipotesiskan — dicatat apa adanya di §1.1.
   latih: A1 9,4 menit, M1 9,5, M2 16,3, A1-FullCSI 17,4.
 * **Gate 7 diperiksa ulang pada pohon git bersih:** 8 gambar (PNG + PDF) dan
   4 tabel LaTeX dibuat ulang di direktori kosong; F2b tidak lagi diharapkan.
+
+---
+
+## 2026-11-12 — Fase 9 (kosmetik naskah)
+
+Dicatat belakangan untuk kelengkapan: seluruh teks keluaran `plots.py` dan
+`tables.py` menjadi bahasa Inggris dengan titik desimal, kode "F#"/"T#"
+dihapus dari judul gambar dan caption, F2 menjadi tiga panel, dan legenda F4
+dan F8 dipindah ke luar sumbu. Tidak ada yang dihitung ulang. Rinciannya ada
+di pesan commit `c11f162`.
+
+---
+
+## 2026-11-12 — Fase 10: finalisasi gambar dan tabel; lima verifikasi
+
+Kosmetik dan pelaporan. **Tidak ada model fisik, reward, hasil pelatihan, atau
+angka evaluasi yang berubah**; semua artefak tetap dibuat dari `results/`
+lewat satu perintah `scripts/make_figures.py`. Yang baru dihitung hanyalah
+**agregasi ulang** `steps.parquet`/`episodes.parquet` yang sudah ada menjadi
+T5 — tidak ada rollout, ray tracing, atau pelatihan baru.
+
+### (A) Lima verifikasi
+
+**A1 — p95 |selisih| synthetic array: 2,23 dB, bukan 2,19 dB.**
+Sumber angka yang benar untuk geometri final adalah
+`results/e0/2ac2654fe51c/T1_e0.json` → `synthetic_array.p95_abs_db` =
+**2,2259 dB** (147 titik, median +0,172, maks 3,2442). Angka 2,19
+(tepatnya 2,1864) ada di `results/e0/1365548d0387/T1_e0.json`, yaitu run E0
+**sebelum** tiga kunci `ray_tracing` ditambahkan (`deterministic`,
+`refraction`, `seed`; lihat entri Fase 7 butir (b)). Geometri scene-nya
+**identik** — `scene.synthetic_l` sama persis di kedua `config_used.json` —
+sehingga selisih 0,04 dB itu realisasi penembakan RT yang berbeda, bukan
+perubahan fisika. Catatan 2026-11-11 (g) butir 3 menyebut 2,19 dB; itu nilai
+lama dan tidak dipakai lagi. Naskah memakai **2,23 dB**, dan F3 panel (c)
+mencetaknya langsung dari berkas hasil.
+
+**A2 — definisi "RIS gain" pada F2(a).** `scripts/run_e1_coverage.py`,
+`main()`, baris 189–195 dan baris 259 (baris 259 yang dipakai):
+
+```
+h_eff(n)        = h_d(n) + (e^{j phi(n)} . g(n)) G          # baris 194
+gain_ris_mrt(n) = ||h_eff(n)||^2                             # baris 195
+gain_direct_mrt(n) = ||h_d(n)||^2                            # baris 189
+ris_gain_db(n)  = 10 log10 gain_ris_mrt(n)
+                - 10 log10 gain_direct_mrt(n)                # baris 259
+```
+
+* **Per titik grid ROI**, bukan agregat; `n` adalah indeks titik.
+* Pembilang dan penyebut keduanya **gain MRT**, yaitu maksimum atas precoder
+  satuan: `||h||^2 = max_{||w||=1} |h^T w|^2`. Jadi tiap sistem memakai
+  beamformer terbaiknya sendiri.
+* `phi(n) = focus_phases(u, g(n))` dengan `u = G a_bar` dan `a_bar` vektor
+  singular kanan utama `G`. Itu profil fokus **optimal per titik**, sehingga
+  petanya adalah **selubung atas**: tiap titik memakai profil RIS-nya
+  sendiri, bukan satu profil bersama untuk seluruh ROI. Perlu disebut di
+  keterangan gambar.
+* Jebakan yang perlu diketahui pembaca kode: nama `ris_gain_db` dipakai dua
+  kali. Baris 181 menghitung kaskade lawan jalur langsung **pada precoder
+  `a_bar` yang sama**; baris 259 **menimpanya** dengan MRT-lawan-MRT. Yang
+  disimpan ke `e1_coverage.npz` dan dipakai F2 adalah yang baris 259.
+
+**A3 — anggaran langkah E4b: keduanya benar, untuk metode yang berbeda.**
+§7 (E4b) dan §8 menyatakannya: **M1** pada Γ = 10/16 dilatih **2e6** langkah
+(`configs/gamma10.yaml` dan `gamma16.yaml`, `training.total_timesteps:
+2.0e+6`), **A1** pada Γ = 10/16 hanya **1e6**, diberikan lewat `--steps` di
+`scripts/run_phase8_training.sh` karena A1 memuncak di 350–450 ribu langkah.
+T4 melaporkan `training.total_timesteps` dari `base.yaml` = 1e6, yaitu
+anggaran run utama. Jadi tidak ada percanggahan; yang ada adalah baris T4
+tanpa keterangan. Diperbaiki: catatan kaki T4 sekarang menyebut penimpaan
+sapuan Γ dan **membaca angkanya dari config sapuan itu sendiri**, bukan dari
+dokumen desain.
+
+**A4 — ya, episode berhenti saat target keluar ROI.**
+`src/risisac/env/ris_isac_env.py:536`:
+`truncated = (self._t >= cfg.episode_steps) or (not in_roi)`.
+Set test (2.700 episode atas 50 lintasan): **rata-rata 36,92 langkah,
+minimum 18, maksimum 50** (median 38). 34 dari 50 lintasan berhenti sebelum
+batas 50 langkah. Panjangnya **identik untuk semua metode dan semua seed**
+(0 dari 50 lintasan punya panjang berbeda antar-metode) karena keluarnya
+target dari ROI adalah sifat lintasan, bukan sifat kebijakan. Dua akibat
+untuk naskah: (i) baris T4 "episode length" sekarang menyatakan batasnya
+beserta sebab berhentinya, dan satu baris terukur ditambahkan; (ii) durasi
+track T2 **tersensor dari atas** — 100% episode B2, B3, B4, A1 dan
+A1-FullCSI tidak pernah kehilangan track dan dilaporkan sepanjang episodenya,
+sehingga nilainya batas bawah. Catatan kaki ditambahkan ke T2.
+
+**A5 — ya, SCNR memakai R_x total; asumsi simbol diketahui TIDAK tertulis.**
+`system/signal_model.py`, docstring `forward_sensing_power`:
+
+> `c^T R_x c^*  (suku maju pada (E7)).` … `Dengan R_x = W_c W_c^H + w_s w_s^H
+> berlaku c^T R_x c^* = ||c^T W_c||^2 + |c^T w_s|^2, yang juga membuat jelas
+> bahwa besaran ini riil dan tak negatif.`
+
+dan `clutter_noise_covariance`:
+
+> `R_cn = xi * H_c R_x H_c^H + (sigma_n^2 / L) I_{Nr}.  (E7)`
+
+Jadi suku maju **dan** suku clutter sama-sama memakai kovarians total, sesuai
+§3.4 (E7). Soal simbol: memakai seluruh `R_x` pada suku maju berarti seluruh
+bentuk gelombang terpancar — **termasuk simbol komunikasi** — berkorelasi
+koheren di penerima BS sepanjang L sampel. Itu hanya sah bila penerima
+mengetahui simbol yang dipancarkannya sendiri, yang pada BS monostatik memang
+berlaku, tetapi **asumsi itu tidak ada di daftar §3.7**. Tidak ada angka yang
+berubah; yang kurang satu baris asumsi. **Usul, belum dikerjakan** karena
+menyentuh dokumen desain: tambahkan butir ke §3.7 — "BS mengetahui simbol yang
+dipancarkannya sendiri, sehingga echo dari aliran komunikasi ikut dipakai
+untuk deteksi (integrasi koheren L sampel)."
+
+### (B) Metrik perilaku baru (T5)
+
+`src/risisac/eval/metrics.py: behaviour_table()`, keluaran
+`results/eval/2ac2654fe51c/T5_behaviour.csv` dan `T5_behaviour.tex`. Γ = 13 dB,
+P_max = 30 dBm, per **langkah** (bukan per episode).
+
+| Metode | ρ rata2 | ρ p95 | SCNR med | SCNR p5 | Rmin p5 | p10 | p50 | langkah < Γ | shortfall |
+|---|---|---|---|---|---|---|---|---|---|
+| B0 | 0,1000 | 0,1000 | 7,69 | −2,52 | 2,95 | 3,20 | 4,16 | 0,678 | 8,78 |
+| B1 | 0,1000 | 0,1000 | 9,57 | −2,55 | 2,64 | 2,85 | 3,90 | 0,649 | 7,87 |
+| B2 | 0,1000 | 0,1000 | 34,73 | 22,55 | 1,04 | 1,26 | 2,13 | 0,003 | 1,98 |
+| B3 | 0,0145 | 0,0555 | 17,63 | 15,53 | 9,90 | 10,21 | 11,56 | 0,000 | — |
+| B4-D5 | 0,0140 | 0,0496 | 18,79 | 8,82 | 4,32 | 5,06 | 9,48 | 0,135 | 3,99 |
+| B4-D10 | 0,0136 | 0,0487 | 19,38 | 7,82 | 3,92 | 4,67 | 8,54 | 0,148 | 4,27 |
+| **A1** | 0,0006 | 0,0000 | 26,12 | 14,84 | 6,63 | 7,07 | 8,50 | **0,034** | 3,29 |
+| A1-FullCSI | 0,0020 | 0,0000 | 25,89 | 12,59 | 6,68 | 7,11 | 8,53 | 0,055 | 4,58 |
+| M1 | 0,0120 | 0,0000 | 10,71 | −2,36 | 6,09 | 6,90 | 8,39 | 0,601 | 7,52 |
+| M2 | 0,0023 | 0,0000 | 10,12 | −2,63 | 6,91 | 7,28 | 8,48 | 0,620 | 7,70 |
+
+Shortfall adalah rata-rata Γ − SCNR **hanya atas langkah yang melanggar**;
+B3 tidak pernah melanggar sehingga selnya "—", bukan 0.
+
+**Temuan kelima yang bertentangan dengan dugaan: A1 hampir tidak memakai beam
+sensing khusus.** ρ = 0 pada **99,4%** langkah A1 (A1-FullCSI 99,2%, M2 99,0%,
+M1 95,7%), sehingga p95 dan p99-nya nol dan rata-ratanya 0,0006 hanya karena
+sedikit langkah dengan ρ sampai 0,36. Bandingkan B3, yang memakai ρ kecil
+**tetapi tidak nol di satu langkah pun** (p95 0,0555). Artinya A1 memenuhi Γ
+pada 96,6% langkah dengan **echo dari precoder komunikasi saja**, yaitu ia
+memakai suku `||c^T W_c||^2` pada (E7) dan bukan suku `|c^T w_s|^2`. Ini
+menjelaskan mengapa rate minimumnya tetap 8,46 sementara B2 jatuh ke 2,15:
+B2 membayar sensing dengan daya, A1 membayarnya dengan arah. Perlu satu
+paragraf di naskah; **tidak** mengubah apa pun di kode.
+
+Dua angka pendukung ke arah yang sama: ekor bawah A1 (Rmin p5 = 6,63) jauh di
+atas B2 (1,04) dan di atas B4-D5 (4,32), sedangkan kedalaman pelanggarannya
+(3,29 dB) lebih dangkal daripada B4-D5 (3,99) dan B4-D10 (4,27).
+
+**Uji Welch (rata-rata per seed, n = 3)**, `T5_tests.json`, konvensi kunci
+sama dengan `meta.json`:
+
+| Pasangan | reward/langkah | rate minimum | pemenuhan SCNR |
+|---|---|---|---|
+| A1 − B2 | +6,191 (p = 0,0001) | +6,307 (p < 0,0001) | −0,033 (p = 0,0082) |
+| A1 − M1 | +4,744 (p = 0,0001) | +0,274 (p = 0,0580) | +0,566 (p < 0,0001) |
+| A1 − B3 | −3,208 (p = 0,0003) | −3,085 (p = 0,0001) | −0,036 (p = 0,0088) |
+
+A1 − B2 cocok dengan nilai yang sudah ada di `meta.json` (masukannya sama).
+A1 − M1 dan A1 − B3 baru. Catatan yang ikut tercetak di T5: dengan n = 3,
+**tandanya** yang bermakna, besar Cohen's d tidak.
+
+### (C) Gambar
+
+1. **F3** diurutkan ulang mengikuti alur argumennya: (a) uji implementasi
+   lawan Friis analitik, (b) kalibrasi terhadap Tang et al. (2021) dengan
+   offset +1,05 dB, (c) synthetic array lawan per elemen. Label `E0-1`..`E0-3`
+   dibuang — itu nama sub-uji di dalam skrip, dan panelnya sudah bernama
+   (a)/(b)/(c). Label batang menjadi **Focus 1/2/3** dan **Gradient**,
+   dipetakan di `tables.PROFILE_LABELS` sehingga T1 dan F3 memakai satu
+   sumber; kunci di berkas hasil (`fokus_0`…`gradien`) sengaja **tidak**
+   diubah, karena mengubahnya berarti menjalankan ulang ray tracing demi
+   teks. Warna disamakan dengan palet Okabe-Ito gambar lain (`tab:blue`
+   dan kawan-kawan dibuang).
+2. **F4** menandai **checkpoint val terbaik tiap seed** A1 dan A1-FullCSI
+   dengan bintang kecil, plus entri legenda "best-val checkpoint" yang
+   netral warna. Pemilihannya mengulang `train.select_best` (argmaks atas
+   baris `timesteps > 0`) dan **diverifikasi identik** dengan
+   `best_timesteps` di `done.json` kedua belas run: A1 350k/450k/350k,
+   A1-FullCSI 250k/200k/250k, M1 950k/700k/900k, M2 350k/850k/700k.
+   Penandanya di kurva **per seed**, bukan di kurva rata-rata: tiap seed
+   memuncak di langkah berbeda, jadi puncak rata-rata bukan rata-rata puncak.
+3. **F5** mendapat **inset** yang memperbesar ekor bawah (CDF ≤ 0,2) untuk
+   A1, A1-FullCSI, B4-D5, B4-D10 dan B3. Inset, bukan panel kedua, karena
+   pada lebar satu kolom dua panel berdampingan tinggal 1,7 inci. Latarnya
+   dibuat buram dengan bingkai penuh — versi tembus pandang membuat kurva
+   gambar utama menembusnya.
+4. **F8** mendapat entri legenda "individual training seeds" untuk titik
+   kecilnya, dan label Γ yang berdesakan kini diselang-seling atas-bawah
+   (pada A1, Γ = 10 dan 13 terpisah 0,03 rentang sumbu — cukup jauh untuk
+   tidak digabung menjadi satu rentang, terlalu dekat untuk dua label dengan
+   geseran yang sama). Label yang meluap keluar bingkai (B2 dan B3, keduanya
+   di pemenuhan 1,0) ditangani dengan **melebarkan batas sumbu sampai label
+   muat**, diputuskan dengan mengukur bbox-nya setelah render. Membalik arah
+   geseran sempat dicoba dan **ditolak**: ia memindahkan label Γ = 10 milik
+   A1 tepat ke atas label Γ = 16, yaitu menukar satu tabrakan dengan
+   tabrakan lain.
+5. **Semua gambar tanpa judul gambar** — judul pindah ke `\caption` naskah.
+   Judul **panel** tetap ada; ia menamai panel, bukan gambar. Angka yang dulu
+   hidup di judul (fraksi LoS F1, indeks lintasan dan seed derau F6, M dan
+   P_max F2) tidak hilang melainkan ditulis ke
+   `manifest.json → caption_facts`, supaya penulis caption mengambilnya dari
+   berkas yang sama dengan gambarnya.
+6. **Lebar dan huruf.** Lebar dipatok ke lebar kolom naskah dan huruf dasar
+   8 pt pada ukuran itu, sehingga **tidak ada penyusutan** saat dipasang:
+   satu kolom (3,5 in) untuk F1, F4, F5, F6, F8; dua kolom (7,16 in) untuk
+   F2, F3, F7. Berkas tersimpan diukur ulang dan semuanya ≤ patokannya
+   (`pad_inches=0.01`; `pad_inches` default 0,1 inci per sisi sempat membuat
+   gambar satu kolom keluar di 3,6 in). PDF memakai huruf Type 42, bukan
+   Type 3 default.
+
+### (D) Tabel
+
+1. **T1**: label profil menjadi Focus 1/2/3 dan Gradient (lihat C1).
+2. **T3 dipecah**: `T3_ablation.tex` (E5) dan `T6_latency.tex` (E6). Dua
+   `table` dalam satu `\input` membuat naskah tidak bisa menempatkannya di
+   halaman berbeda. Label `tab:t3-cost` menjadi `tab:t6-latency`.
+3. **T4**: bobot hinge ditulis **μ**, bukan λ — λ sudah dipakai GAE di baris
+   hiperparameter PPO, dan dua λ dalam satu tabel pasti ditanyakan pengulas;
+   catatan kaki menyatakan bahwa di config namanya tetap `reward.lambda`.
+   Baris κ diberi keterangan **"(M1/M2 ablation only)"** — diminta
+   "(M1 ablation only)", ditulis M1/M2 karena M2 juga memakai fasa
+   inkremental, jadi versi yang diminta akan salah. Baris `$T$` lama diganti
+   "Episode length — up to 50 steps (ends when the target leaves the ROI)",
+   dan satu baris **terukur** ditambahkan: `$T$ (test set: mean / min / max)`
+   = 36,9 / 18 / 50 langkah, dari `episodes.parquet`.
+4. **`T_baselines.tex`** baru (Table III naskah): Method | Phase action |
+   CSI used for precoding | Target information | Tuned on, sembilan baris
+   sesuai §6.1 dan §6.2. Kolom CSI sengaja dipisahkan dari observasi, karena
+   di situlah satu-satunya kesalahpahaman yang mudah terjadi: **A1-FullCSI
+   dan M2 melihat kanal per elemen di observasinya, tetapi precoder-nya tetap
+   memakai kanal efektif yang diestimasi dengan NMSE yang sama seperti A1**.
+   Isinya ditulis di `tables.BASELINE_ROWS`, bukan dibaca dari file hasil: ia
+   menggambarkan desain, bukan mengukur sesuatu. Konsekuensinya dinyatakan
+   terbuka — kalau §6 berubah, baris itu harus ikut diubah.
+5. **T2**: kolom durasi track dipertahankan, dengan catatan kaki bahwa ia
+   tersensor oleh panjang episode (A4). Daftar metode yang tersensor 100%
+   diturunkan dari kolom `track_censored` di `T2.csv`, bukan diketik.
+
+### (E) Pemeriksaan
+
+* `scripts/make_figures.py` kini menghasilkan **8 gambar (PNG + PDF) dan 7
+  tabel LaTeX**; `run_gate7_check.py` diperbarui ke daftar itu.
+* `pytest`: **198 lolos** (188 sebelumnya + 10 tes baru di
+  `tests/test_tables_phase10.py`, yang menguji hal-hal yang mudah salah
+  diam-diam: fraksi pelanggaran = 1 − pemenuhan, shortfall hanya atas langkah
+  yang melanggar, sel "—" ketika tidak ada pelanggaran, dan kolom CSI
+  A1-FullCSI di tabel baseline).
+* **Gate 7 LOLOS** pada pohon git bersih: persamaan, gambar, tabel.
+
+### Yang masih terbuka
+
+* Asumsi "simbol sendiri diketahui penerima" belum masuk §3.7 (A5). Perlu
+  persetujuan karena menyentuh dokumen desain.
+* Urutan baris T3b/T6 masih mengikuti urutan `METHODS`, bukan `METHOD_ORDER`
+  seperti T2 dan T5.
+* Hipotesis hinge (E9) masih belum diuji; `scripts/place_geometry.py` masih
+  memakai objektif yang sudah terbukti keliru; E7/E8 (P3) belum dikerjakan.

@@ -15,7 +15,12 @@ docstring tetap bahasa Indonesia; keduanya untuk yang mengerjakan kode.
 lewat urutan ``\begin{table}``, dan ``\label`` sudah menyediakan rujukan
 silangnya; menuliskannya juga di dalam caption berarti dua sumber kebenaran
 yang pasti berselisih begitu satu tabel dipindahkan. Nama BERKAS tetap
-memakai awalan ``T1_``..``T4_``.
+memakai awalan ``T1_``..``T6_``.
+
+Fase 10: T3 dipecah menjadi dua berkas (``T3_ablation.tex`` dan
+``T6_latency.tex``) supaya manuskrip bisa menempatkannya di halaman berbeda;
+ditambah ``T5_behaviour.tex`` (perilaku per langkah) dan
+``T_baselines.tex`` (ikhtisar metode, §6).
 """
 
 from __future__ import annotations
@@ -106,6 +111,19 @@ def latex_table(header, rows, caption: str, label: str,
 
 
 # ------------------------------------------------------------------- T1 (E0)
+#: Nama profil fasa RIS yang diuji E0, dari kunci di ``T1_e0.json`` ke label
+#: paper (Fase 10). Dipetakan di SINI, bukan di skrip E0: mengganti kuncinya
+#: berarti menjalankan ulang ray tracing hanya demi teks. ``fokus_0`` adalah
+#: fokus PERTAMA, jadi penomoran paper mulai dari 1, bukan dari 0.
+PROFILE_LABELS = {"fokus_0": "Focus 1", "fokus_1": "Focus 2",
+                  "fokus_2": "Focus 3", "gradien": "Gradient"}
+
+
+def profile_label(name: str) -> str:
+    """Label paper untuk satu profil fasa E0; tak dikenal -> apa adanya."""
+    return PROFILE_LABELS.get(str(name), str(name))
+
+
 def t1_channel_validation(e0: dict) -> str:
     """T1 -- galat validasi kanal, dari ``results/e0/<hash>/T1_e0.json``."""
     per = e0["per_element"]
@@ -120,7 +138,7 @@ def t1_channel_validation(e0: dict) -> str:
          number(per["g_phase_max_deg"], 4), "deg"],
     ]
     for name, item in e0["cascade"].items():
-        rows.append([f"Cascade, {name} profile",
+        rows.append([f"Cascade, {profile_label(name)} profile",
                      number(item["max_abs_db"], 4), "dB"])
     rows.append(["Calibration against Tang et al. (2021), Eq. (6)",
                  number(e0["calibration_db"], 2), "dB"])
@@ -156,6 +174,11 @@ METHOD_LABELS = {"B0": "B0 No-RIS",
                  "M1": "M1 PPO-PO (incremental-phase ablation)",
                  "M2": "M2 PPO-FullCSI (incremental-phase ablation)"}
 
+#: Urutan baris tabel: sama dengan ``eval.evaluate.METHOD_ORDER`` dan
+#: ``eval.plots.METHOD_ORDER``. Diturunkan dari urutan kunci METHOD_LABELS,
+#: bukan diketik ulang untuk ketiga kalinya.
+METHOD_ORDER = tuple(METHOD_LABELS)
+
 
 def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
                     with_ci: bool = True) -> str:
@@ -171,6 +194,24 @@ def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
                           f"{number(row[f'{key}_hi'], digits)}]}}")
             cells.append(Raw(value))
         rows.append(cells)
+    # Catatan sensor (Fase 10). Durasi track DIPERTAHANKAN sebagai kolom --
+    # ia tetap membedakan metode di ujung bawah -- tetapi angkanya tersensor
+    # dari atas oleh panjang episode: episode yang tracknya tidak pernah
+    # hilang dilaporkan sepanjang episodenya, bukan sepanjang track yang
+    # sebenarnya. Tanpa kalimat ini, "3,69 s" terbaca sebagai pengukuran
+    # padahal ia batas bawah untuk sebagian besar metode.
+    censored = ""
+    if "track_censored" in getattr(t2, "columns", []):
+        share = 100.0 * float(t2["track_censored"].max())
+        worst = ", ".join(str(m) for m in t2.index
+                          if float(t2.loc[m, "track_censored"]) >= 1.0)
+        censored = (" Track duration is censored from above by the episode "
+                    "length: an episode whose track is never lost is reported "
+                    f"at its full length, which happens for up to {share:.0f}"
+                    "\\% of episodes"
+                    + (f" ({worst})" if worst else "")
+                    + ", so for those rows the value is a lower bound, not a "
+                      "measured survival time.")
     return latex_table(
         header, rows,
         caption=(f"Test-set results, $\\Gamma$ = {gamma_db:g} dB, "
@@ -182,7 +223,7 @@ def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
                "and is given perfect direct CSI: it is the floor of a "
                "RIS-free system, not a realistic RIS-free system. B3/B4 use "
                "perfect CSI and perfect positions: upper references, not "
-               "deployable methods."))
+               "deployable methods." + censored))
 
 
 # ---------------------------------------------------------------- T3 (E5+E6)
@@ -244,8 +285,13 @@ def t3_ablation(e5) -> str:
         label="tab:t3-ablation", notes=note)
 
 
-def t3_cost(cost: dict) -> str:
-    """T3b -- biaya komputasi per keputusan (E6)."""
+def t6_latency(cost: dict) -> str:
+    """T6 -- biaya komputasi per keputusan (E6).
+
+    Berkas tersendiri sejak Fase 10. Sebelumnya ia menumpang di berkas T3
+    bersama ablasi, sehingga manuskrip harus memuat dua ``table`` dari satu
+    ``\\input`` dan tidak bisa menempatkannya di halaman berbeda.
+    """
     rows = []
     for paper_id, item in cost.get("agents", {}).items():
         rows.append([METHOD_LABELS.get(paper_id, paper_id),
@@ -275,13 +321,156 @@ def t3_cost(cost: dict) -> str:
     note += ("The amortised figure applies only to an offline reference whose "
              "every step is optimised in one batch, not to a controller.")
     return latex_table(["Method", "ms per decision", "Device"], rows,
-                       caption="Computational cost per decision (E6).",
-                       label="tab:t3-cost", align="lrl", notes=note)
+                       caption="Inference cost per decision (E6).",
+                       label="tab:t6-latency", align="lrl", notes=note)
 
 
-def t3_ablation_cost(e5, cost: dict) -> str:
-    """T3 lengkap: ablasi (E5) diikuti biaya komputasi (E6)."""
-    return t3_ablation(e5) + "\n" + t3_cost(cost)
+# ------------------------------------------------------- tabel metode (§6)
+#: Satu baris per metode: apa yang ia putuskan, informasi apa yang dipakainya,
+#: dan di mana ia disetel. Isinya adalah docs/EXPERIMENT_DESIGN.md §6.1 dan
+#: §6.2 yang dipindahkan ke bentuk tabel, DITULIS DI SINI dan bukan dibaca
+#: dari file hasil: ia menggambarkan desain, bukan mengukur sesuatu, jadi
+#: tidak ada file hasil yang bisa menjadi sumbernya. Konsekuensinya satu dan
+#: dinyatakan terbuka: kalau §6 berubah, baris ini harus ikut diubah.
+#:
+#: Kolom "CSI used for precoding" sengaja dipisahkan dari observasi, karena di
+#: situlah letak satu-satunya kesalahpahaman yang mudah terjadi pada tabel
+#: ini: A1-FullCSI dan M2 melihat kanal per elemen DI OBSERVASINYA, tetapi
+#: precoder-nya tetap memakai kanal efektif yang diestimasi dengan NMSE yang
+#: sama seperti A1. "Full CSI" di nama metodenya menyangkut apa yang dilihat
+#: agen, bukan apa yang dipakai BS untuk membentuk W_c.
+BASELINE_ROWS = (
+    ("B0", Raw("None (RIS cascade removed)"),
+     Raw(r"Perfect direct $\mathbf{h}_d$"),
+     Raw(r"True $\mathbf{h}_{d,t}$ (MRT sensing beam)"),
+     Raw(r"Val grid ($\rho$, power split)")),
+    ("B1", Raw("Absolute, i.i.d. uniform each step"),
+     Raw(r"Estimated $\hat{\mathbf{h}}_e$, NMSE $\epsilon$"),
+     Raw("Tracker estimate"), Raw(r"Val grid ($\rho$)")),
+    ("B2", Raw("Absolute, closed form from estimated positions"),
+     Raw(r"Estimated $\hat{\mathbf{h}}_e$, NMSE $\epsilon$"),
+     Raw("Tracker estimate"), Raw(r"Val grid ($\omega$, $\rho$)")),
+    ("B3", Raw("Absolute, Adam per step (300 iterations, 4 restarts)"),
+     Raw(r"Perfect $\mathbf{h}_e$"), Raw(r"True $\mathbf{g}_t$"),
+     Raw("Not tuned (re-optimised every step)")),
+    ("B4-D", Raw("Absolute, B3 re-run every $D$ steps and held"),
+     Raw(r"Perfect $\mathbf{h}_e$, up to $D-1$ steps stale"),
+     Raw(r"True $\mathbf{g}_t$, same staleness"),
+     Raw(r"Not tuned ($D \in \{5, 10\}$ fixed)")),
+    ("A1", Raw("Absolute, learned"),
+     Raw(r"Estimated $\hat{\mathbf{h}}_e$, NMSE $\epsilon$"),
+     Raw("Tracker estimate"), Raw("Val (best checkpoint)")),
+    ("A1-FullCSI", Raw("Absolute, learned"),
+     Raw(r"Estimated $\hat{\mathbf{h}}_e$, NMSE $\epsilon$"),
+     Raw(r"True positions and $\mathbf{g}$ in the observation"),
+     Raw("Val (best checkpoint)")),
+    ("M1", Raw(r"Incremental, $\kappa \pi$ per step"),
+     Raw(r"Estimated $\hat{\mathbf{h}}_e$, NMSE $\epsilon$"),
+     Raw("Tracker estimate"), Raw("Val (best checkpoint)")),
+    ("M2", Raw(r"Incremental, $\kappa \pi$ per step"),
+     Raw(r"Estimated $\hat{\mathbf{h}}_e$, NMSE $\epsilon$"),
+     Raw(r"True positions and $\mathbf{g}$ in the observation"),
+     Raw("Val (best checkpoint)")),
+)
+
+
+def baselines_table() -> str:
+    """Tabel ikhtisar metode dan baseline (§6.1, §6.2)."""
+    rows = [[Raw(METHOD_LABELS.get(key, key) if key != "B4-D"
+                 else "B4 Oracle-GD-stale($D$)"), *cells]
+            for key, *cells in BASELINE_ROWS]
+    return latex_table(
+        ["Method", "Phase action", "CSI used for precoding",
+         "Target information", "Tuned on"], rows,
+        caption="Methods and baselines: what each one decides and what it "
+                "is allowed to know.",
+        label="tab:baselines", align="lllll",
+        notes=(r"$\epsilon$ is the effective-channel NMSE in Table~"
+               r"\ref{tab:parameters}. The sensing beam $\mathbf{w}_s$ is "
+               "built from the tracker estimate for every method except B0, "
+               "B3 and B4, including the two that observe the true positions "
+               "(A1-FullCSI, M2): full observation changes what the agent "
+               "sees, not how the BS forms its precoders. B1--B4 and B0 run "
+               "with absolute phase updates because the random and the "
+               "closed-form rules are undefined on incremental actions; this "
+               "favours the baselines over M1/M2, not the other way round."))
+
+
+# ------------------------------------------------------------- T5 (perilaku)
+#: Kolom T5: (kunci di T5_behaviour.csv, judul kolom, digit).
+T5_FIELDS = ((Raw(r"$\bar{\rho}$"), "rho_mean", 4),
+             (Raw(r"$\rho_{95}$"), "rho_p95", 4),
+             (Raw("SCNR med."), "scnr_median_db", 1),
+             (Raw(r"SCNR $p_5$"), "scnr_p5_db", 1),
+             (Raw(r"$R_{\min}$ $p_5$"), "min_rate_p5", 2),
+             (Raw(r"$R_{\min}$ $p_{10}$"), "min_rate_p10", 2),
+             (Raw(r"$R_{\min}$ $p_{50}$"), "min_rate_p50", 2),
+             (Raw(r"Steps $<\Gamma$"), "violation_fraction", 3),
+             (Raw("Shortfall"), "mean_shortfall_db", 2))
+
+
+def t5_behaviour(behaviour, gamma_db: float, tests: dict | None = None) -> str:
+    """T5 -- perilaku per langkah: daya sensing, ekor SCNR, ekor rate (E3).
+
+    Tabel ini menjawab pertanyaan yang T2 tidak jawab. T2 melaporkan
+    rata-rata; di sini yang dilaporkan adalah **ekor**, dan dua kolom
+    terakhir memisahkan "seberapa sering melanggar" dari "seberapa dalam
+    melanggarnya" -- dua metode bisa punya pemenuhan SCNR yang sama dengan
+    kedalaman pelanggaran yang sangat berbeda.
+    """
+    header = ["Method"] + [h for h, _, _ in T5_FIELDS]
+    rows = []
+    for method, row in behaviour.iterrows():
+        cells = [METHOD_LABELS.get(method, method)]
+        for _, key, digits in T5_FIELDS:
+            cells.append(number(row[key], digits))
+        rows.append(cells)
+    note = (r"Per-step quantities on the test set. $\bar{\rho}$ and "
+            r"$\rho_{95}$ are the mean and the 95th percentile of the sensing "
+            r"power share; SCNR percentiles are in dB; $R_{\min}$ percentiles "
+            r"are in bit/s/Hz. ``Steps $<\Gamma$'' is the fraction of steps "
+            r"below the threshold, i.e. one minus the SCNR compliance of "
+            r"Table~\ref{tab:t2-main-results}; ``Shortfall'' is the mean of "
+            r"$\Gamma - \mathrm{SCNR}$ in dB over those steps only, so a "
+            "method that never violates has no shortfall (--) rather than "
+            "zero. ")
+    note += _welch_sentence(tests)
+    return latex_table(header, rows,
+                       caption=(f"Per-step behaviour on the test set, "
+                                f"$\\Gamma$ = {gamma_db:g} dB."),
+                       label="tab:t5-behaviour",
+                       align="l" + "r" * (len(header) - 1), notes=note)
+
+
+def _welch_sentence(tests: dict | None) -> str:
+    """Kalimat uji Welch untuk catatan kaki T5, dari file stats.
+
+    Dikelompokkan per PASANGAN, bukan per metrik: sembilan klausa sejajar
+    tidak terbaca sebagai apa pun, sedangkan tiga klausa yang masing-masing
+    memuat tiga angka langsung menjawab "A1 lebih baik daripada apa, dan di
+    besaran mana".
+    """
+    if not tests:
+        return ""
+    labels = {"reward_per_step": "reward", "min_rate": "min. rate",
+              "scnr_compliance": "SCNR compliance"}
+    by_pair: dict[str, list] = {}
+    for key, item in tests.items():
+        column, pair = key.split("|", 1)
+        by_pair.setdefault(pair, []).append((column, item))
+    parts = []
+    for pair, items in by_pair.items():
+        a, b = pair.split("_vs_")
+        inner = ", ".join(
+            f"{labels.get(column, column)} {number(item['diff'], 3, True)} "
+            f"($p$ = {float(item['p']):.4f}, $d$ = {number(item['cohen_d'], 0)})"
+            for column, item in items)
+        parts.append(f"A1 $-$ {b}: {inner}" if a == "A1"
+                     else f"{a} $-$ {b}: {inner}")
+    return ("Welch $t$-tests over per-seed means, $n$ = 3 seeds: the power is "
+            "low and the effect sizes are correspondingly unstable, so the "
+            "signs matter and the magnitudes of $d$ do not. "
+            + "; ".join(parts) + ".")
 
 
 # ------------------------------------------------------------ tabel parameter
@@ -304,9 +493,17 @@ PARAM_ROWS = (
      "plain"),
     (Raw(r"$\Gamma$"), ("sensing", "scnr_threshold_db"), "db"),
     (Raw(r"$\Delta t$"), ("mobility", "dt_s"), "s"),
-    (Raw("$T$ (steps per episode)"), ("mobility", "episode_steps"), "int"),
-    (Raw(r"$\kappa$"), ("action", "phase_step_kappa"), "plain"),
-    (Raw(r"$\lambda$"), ("reward", "lambda"), "plain"),
+    # Satu baris, bukan "T = 50": episode berakhir pada 50 langkah ATAU saat
+    # target meninggalkan ROI, mana yang lebih dulu, dan di set test yang
+    # kedua lebih sering (lihat baris berikutnya, yang diukur).
+    (Raw("Episode length"), ("mobility", "episode_steps"), "episode"),
+    (Raw(r"$\kappa$ (M1/M2 ablation only)"),
+     ("action", "phase_step_kappa"), "plain"),
+    # Bobot hinge ditulis mu di paper, bukan lambda: lambda sudah dipakai GAE
+    # di baris hiperparameter PPO, dan dua lambda dalam satu tabel adalah
+    # cacat yang pasti ditanyakan pengulas. Di config dan kode namanya tetap
+    # `reward.lambda` / `reward_lambda`; catatan kaki menyatakan pemetaannya.
+    (Raw(r"$\mu$ (hinge weight)"), ("reward", "lambda"), "plain"),
     (Raw(r"$\epsilon$ (channel NMSE)"), ("observation", "eff_channel_nmse_db"),
      "db"),
     (Raw(r"$\sigma_u$"), ("observation", "user_pos_std_m"), "m"),
@@ -352,6 +549,9 @@ def _fmt(value, kind: str) -> Raw:
         return Raw(f"{number(value, 2)} s")
     if kind == "sci":
         return sci(value)
+    if kind == "episode":
+        return Raw(f"up to {int(value)} steps (ends when the target leaves "
+                   "the ROI)")
     if kind == "ris":
         return Raw(f"{int(value['num_rows']) * int(value['num_cols'])} "
                    f"({int(value['num_rows'])} $\\times$ "
@@ -359,17 +559,52 @@ def _fmt(value, kind: str) -> Raw:
     return Raw(number(value, 3))
 
 
-def parameter_table(cfg: dict) -> str:
-    """Tabel parameter default (§8) langsung dari config, tanpa ketik ulang."""
+def parameter_table(cfg: dict, episode_stats: dict | None = None,
+                    sweep_steps: dict | None = None) -> str:
+    """Tabel parameter default (§8) langsung dari config, tanpa ketik ulang.
+
+    :param episode_stats: keluaran
+        :func:`risisac.eval.metrics.episode_length_stats`. Bila diberikan,
+        satu baris TERUKUR ditambahkan: panjang episode di set test. Ia tidak
+        ada di config -- ia akibat geometri ROI dan lintasan -- jadi ia datang
+        dari file hasil, bukan dari angka yang diketik. Tanpa argumen ini
+        (``print_param_table.py``) barisnya dilewati, bukan ditebak.
+    """
     rows = []
     for label, path, kind in PARAM_ROWS:
         try:
             rows.append([label, _fmt(_dig(cfg, path), kind)])
         except (KeyError, TypeError):
             continue
+    notes = (r"Every value is read directly from \texttt{configs/base.yaml} "
+             "when this table is generated; none is retyped. The hinge "
+             r"weight $\mu$ is \texttt{reward.lambda} in the configuration "
+             r"files; it is written $\mu$ here because $\lambda$ already "
+             "denotes the GAE parameter.")
+    if episode_stats:
+        rows.append([
+            Raw(r"$T$ (test set: mean / min / max)"),
+            Raw(f"{float(episode_stats['mean']):.1f} / "
+                f"{int(episode_stats['min'])} / "
+                f"{int(episode_stats['max'])} steps")])
+        notes += (" The episode-length row is measured on the test set "
+                  f"({int(episode_stats['n_episodes'])} episodes over "
+                  f"{int(episode_stats['n_trajectories'])} trajectories); it "
+                  "is a property of the trajectories, not of the policy, so "
+                  "it is identical for every method.")
+    if sweep_steps:
+        # Satu kalimat yang mencegah satu-satunya pertanyaan yang pasti
+        # muncul dari baris "Training steps": anggaran sapuan Gamma berbeda
+        # dari anggaran utama, dan angkanya dibaca dari config sapuan itu
+        # sendiri, bukan diketik ulang dari dokumen desain.
+        listed = ", ".join(f"$\\Gamma$ = {float(gamma):g} dB: {sci(value)}"
+                           for gamma, value in sorted(sweep_steps.items()))
+        notes += (" The training-steps row is the budget of the main runs; "
+                  f"the $\\Gamma$ sweep overrides it ({listed}) for M1 only, "
+                  "whose validation curve is still rising at "
+                  "$1 \\times 10^{6}$ steps there, while A1 has already "
+                  "passed its peak.")
     return latex_table(
         ["Parameter", "Value"], rows,
         caption="System and training parameters.",
-        label="tab:parameters", align="ll",
-        notes=(r"Every value is read directly from \texttt{configs/base.yaml} "
-               "when this table is generated; none is retyped."))
+        label="tab:parameters", align="ll", notes=notes)
