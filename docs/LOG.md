@@ -2515,3 +2515,68 @@ A1 − M1 dan A1 − B3 baru. Catatan yang ikut tercetak di T5: dengan n = 3,
   seperti T2 dan T5.
 * Hipotesis hinge (E9) masih belum diuji; `scripts/place_geometry.py` masih
   memakai objektif yang sudah terbukti keliru; E7/E8 (P3) belum dikerjakan.
+
+---
+
+## 2026-11-12 (Fase 11) — Rilis publik: audit, README Inggris, paket data
+
+Tidak ada kode ilmiah, hasil, atau angka yang berubah. Semua yang ditambahkan
+di fase ini hanya memindahkan apa yang sudah ada ke bentuk yang bisa dibaca
+orang lain.
+
+### (A) Audit pra-publikasi
+
+1. **Rahasia**: nihil. Pencarian pola token, password, API key, kunci privat,
+   `ghp_`, `github_pat_`, `sk-`, dan `AKIA…` di seluruh file yang di-track
+   **dan di seluruh riwayat git** (25 commit) tidak menemukan apa pun.
+2. **Path pribadi**: nihil di file yang di-track dan di riwayat. Tetapi
+   **ada di `results/paper/<hash>/manifest.json`**, yang mencatat direktori
+   sumber tiap artefak sebagai path absolut mesin pengembang. File itu tidak
+   masuk git, tetapi ikut ke arsip data, jadi `package_data.py` menyaringnya
+   saat mengemas (4 kemunculan) dan menolak menulis zip kalau masih ada sisa
+   path di bawah direktori home mana pun, termasuk di file biner.
+   Dipilih menyaring saat mengemas, bukan mengubah `make_figures.py`, supaya
+   tidak ada artefak yang perlu dibuat ulang.
+3. **File besar**: blob terbesar di riwayat 124 KB (`docs/LOG.md`), seluruh
+   `.git` 2,5 MB. Tidak ada yang mendekati 50 MB.
+4. **`paper/` dan `naskah_overleaf.zip`**: tidak pernah masuk riwayat
+   (`git log --diff-filter=A` bersih). `paper/` ditambahkan ke `.gitignore`;
+   `*.zip` sudah ada sejak awal.
+5. **Trailer `Claude-Session`**: 24 dari 25 commit memuat tautan ke sesi
+   Claude Code pribadi. Isinya tidak bisa dibuka orang lain, tetapi ID sesi
+   akan terbaca publik selamanya. Atas keputusan penulis, riwayat ditulis
+   ulang untuk membuang baris `Claude-Session` **dan** `Co-Authored-By`;
+   peran Claude Code tetap dinyatakan terbuka di README dan di naskah.
+
+### (B) Yang ditambahkan
+
+* `README.md` berbahasa Inggris; versi Indonesia lama pindah ke
+  `README.id.md` tanpa perubahan isi. README baru memuat tabel pemetaan
+  **artefak naskah → skrip → file hasil** untuk F1–F8, T1–T6, dan
+  T_baselines, waktu terukur tiap langkah, dan bagian "Use of AI tools" yang
+  sejalan dengan pernyataan di naskah.
+* `LICENSE`: Apache-2.0, disalin utuh dari teks kanonik (sha256
+  `cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30`), hanya
+  baris hak cipta yang diisi. Arsip data memakai CC-BY-4.0, bukan Apache.
+* `CITATION.cff`: tiga penulis, afiliasi UGM, ORCID dikosongkan dengan TODO.
+* `scripts/package_data.py`: mengemas arsip data.
+
+### (C) Arsip data
+
+`dist/ris-isac-drl-data-v1.0.zip`, **267,1 MB** (298,7 MB sebelum kompresi,
+296 file + `README_DATA.md` + `SHA256SUMS`). Isinya: basis data kanal
+`6949e64b5418.h5`; `results/{e0,e1,gate3,gate5,eval,paper}/` untuk lima config
+yang dipakai naskah; dan untuk 30 run pelatihan (10 pasangan metode-config ×
+3 seed) **hanya** `model_best.zip`, `vecnormalize_best.pkl`, `done.json`,
+`meta.json`, `config.yaml`, `eval_val.csv`, dan `progress.csv`.
+
+Checkpoint periodik, `model.zip` akhir, `vecnormalize.pkl` akhir, dan file
+TensorBoard **tidak** ikut: 6,5 GB yang tidak dipakai satu angka pun di
+naskah, karena pemilihan model memakai validasi (Fase 7). Daftar config
+diturunkan lewat `config_hash(load_config(nama))`, bukan hash harfiah, supaya
+tidak bisa basi diam-diam. SHA256 dihitung atas isi yang ditulis ke zip,
+bukan atas file di disk, supaya `sha256sum -c` cocok setelah penyaringan path.
+
+Dua run Fase 7 (`a1stable` `7fef4cef645d`, `a1entropy` `f60243e0e922`)
+**tidak** ikut: keduanya eksplorasi stabilisasi yang tidak dikutip naskah dan
+tidak punya direktori `eval/` atau `gate5/`.

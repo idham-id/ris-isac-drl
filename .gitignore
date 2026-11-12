@@ -14,3 +14,6 @@ checkpoints/
 build/
 dist/
 .pytest_cache/
+
+# Naskah (dikelola terpisah di Overleaf)
+paper/

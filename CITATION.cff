@@ -1,0 +1,64 @@
+cff-version: 1.2.0
+message: "If you use this software or the accompanying dataset, please cite the paper below."
+type: software
+title: "RIS-ISAC-DRL: real-time deep reinforcement learning control of RIS-assisted ISAC under partial observations"
+abstract: >-
+  Simulation and training code for a proximal-policy-optimisation controller
+  that sets the phases of a reconfigurable intelligent surface, the
+  communication-sensing power split and the user weights every 100 ms in a
+  monostatic ISAC system whose target is outside the base station's line of
+  sight. Channels come from a ray-traced digital twin built with NVIDIA
+  Sionna RT.
+authors:
+  - family-names: Timur
+    given-names: "Muhammad Idham Ananta"
+    email: idham@ugm.ac.id
+    affiliation: "Department of Computer Science and Electronics, Universitas Gadjah Mada"
+    # TODO: isi ORCID, format "https://orcid.org/0000-0000-0000-0000"
+    # orcid: ""
+  - family-names: Ashari
+    given-names: Ahmad
+    affiliation: "Department of Computer Science and Electronics, Universitas Gadjah Mada"
+    # TODO: isi ORCID
+    # orcid: ""
+  - family-names: Widodo
+    given-names: "Triyogatama Wahyu"
+    affiliation: "Department of Computer Science and Electronics, Universitas Gadjah Mada"
+    # TODO: isi ORCID
+    # orcid: ""
+version: "1.0.0"
+date-released: "2026-11-12"
+license: Apache-2.0
+repository-code: "https://github.com/idham-id/ris-isac-drl"
+keywords:
+  - reconfigurable intelligent surface
+  - integrated sensing and communication
+  - deep reinforcement learning
+  - proximal policy optimisation
+  - ray tracing
+  - digital twin
+  - Sionna
+# TODO: setelah DOI Zenodo terbit, tambahkan di sini:
+# identifiers:
+#   - type: doi
+#     value: "10.5281/zenodo.XXXXXXX"
+#     description: "Archived snapshot of the code"
+#   - type: doi
+#     value: "10.5281/zenodo.YYYYYYY"
+#     description: "Channel database, evaluation logs and best-validation checkpoints"
+preferred-citation:
+  type: article
+  title: "Real-Time Deep Reinforcement Learning Control of RIS-Assisted Integrated Sensing and Communication under Partial Observations"
+  authors:
+    - family-names: Timur
+      given-names: "Muhammad Idham Ananta"
+      email: idham@ugm.ac.id
+      affiliation: "Universitas Gadjah Mada"
+    - family-names: Ashari
+      given-names: Ahmad
+      affiliation: "Universitas Gadjah Mada"
+    - family-names: Widodo
+      given-names: "Triyogatama Wahyu"
+      affiliation: "Universitas Gadjah Mada"
+  year: 2026
+  # TODO: lengkapi journal, volume, pages, doi setelah diterima
