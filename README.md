@@ -184,7 +184,9 @@ Measured on an Intel Core i5-13600KF (14 cores), 32 GB RAM, NVIDIA RTX 4070
   out-of-memory, lower `rx_batch_size` and `samples_per_src` in the config
   before anything else.
 - A multi-core CPU matters more than the GPU: PPO training does not use the GPU.
-- Disk: the channel database is 28 MB; the archived results are about 230 MB.
+- Disk: the channel database is 28 MB; the data archive is 267 MB compressed
+  and 299 MB extracted. Running every step from scratch instead produces about
+  9 GB, most of it periodic training checkpoints that nothing reads afterwards.
 - Rebuilding the figures and tables from the archived data needs **no GPU**.
 
 ## Use of AI tools
