@@ -42,8 +42,8 @@ from risisac.system import signal_model as sm                   # noqa: E402
 from risisac.train import METHODS                               # noqa: E402
 
 #: Metrik yang digambar F7, dan apakah ia butuh ambang.
-PANEL_METRICS = (("min_rate", "rate minimum (bit/s/Hz)"),
-                 ("scnr_compliance", "pemenuhan SCNR"))
+PANEL_METRICS = (("min_rate", "minimum rate (bit/s/Hz)"),
+                 ("scnr_compliance", "SCNR compliance"))
 
 
 def speed_group(store, bins) -> dict[int, int]:

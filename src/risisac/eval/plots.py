@@ -1,12 +1,22 @@
 """Gambar untuk paper. Selalu dibuat ulang dari file hasil, bukan dari memori
 proses (CLAUDE.md).
 
+**Bahasa keluaran: Inggris, dengan titik desimal** (Fase 9). Komentar dan
+docstring tetap bahasa Indonesia -- keduanya untuk yang mengerjakan kode, dan
+menerjemahkannya hanya akan memutus rujukan ke `docs/LOG.md`.
+
+**Tidak ada kode "F#" di judul gambar** (Fase 9). Nomor gambar diatur LaTeX
+lewat urutan ``\\begin{figure}``; menuliskannya juga di dalam gambar berarti
+dua sumber kebenaran yang pasti berselisih begitu satu gambar dipindahkan.
+Nama BERKAS tetap memakai awalan ``F1_``..``F8_`` supaya cocok dengan §11
+dan dengan ``run_gate7_check.py``.
+
 Pilihan warna:
 
 * **F2 adalah peta magnitudo relatif terhadap ambang**, jadi skalanya *diverging*
   dengan titik tengah netral tepat DI ambang kriterianya — 6 dB untuk panel
-  penguatan, Γ untuk panel radar — sehingga batas lulus/tidak terbaca dari
-  warnanya sendiri. Bukan pelangi, bukan jet.
+  penguatan, Γ untuk kedua panel radar — sehingga batas lulus/tidak terbaca
+  dari warnanya sendiri. Bukan pelangi, bukan jet.
 * **F1 adalah peta identitas**, jadi warnanya *kategorikal* dengan urutan tetap.
   Dipakai palet Okabe-Ito, yang memang dirancang dan diuji aman untuk buta warna.
   Validator palet dari skill dataviz tidak bisa dijalankan di mesin ini (Node.js
@@ -73,15 +83,16 @@ def plot_f1_layout(spec, placement, out_path: str | Path,
     # ROI
     ax.add_patch(MplPolygon(placement.roi_polygon, closed=True, facecolor="none",
                             edgecolor=OKABE_ITO["blue"], linewidth=2.0,
-                            label="ROI (area NLoS)", zorder=4))
+                            label="ROI (NLoS area)", zorder=4))
 
     for i, sw in enumerate(placement.sidewalks):
         ax.add_patch(MplPolygon(sw, closed=True, facecolor=OKABE_ITO["sky"],
                                 alpha=0.35, edgecolor="none", zorder=3,
-                                label="Trotoar" if i == 0 else None))
+                                label="Sidewalk" if i == 0 else None))
     for i, lane in enumerate(placement.target_lanes):
         ax.plot(lane[:, 0], lane[:, 1], color=OKABE_ITO["orange"], linewidth=2.0,
-                linestyle="--", zorder=5, label="Lajur target" if i == 0 else None)
+                linestyle="--", zorder=5,
+                label="Target lanes" if i == 0 else None)
 
     ax.plot(*placement.bs_tx[:2], marker="^", markersize=11,
             color=OKABE_ITO["vermillion"], linestyle="none", zorder=6, label="BS")
@@ -99,13 +110,13 @@ def plot_f1_layout(spec, placement, out_path: str | Path,
     ax.plot([placement.bs_tx[0], placement.ris_position[0]],
             [placement.bs_tx[1], placement.ris_position[1]],
             color=OKABE_ITO["vermillion"], linewidth=1.2, linestyle=":",
-            alpha=0.9, zorder=4, label="LoS BS-RIS")
+            alpha=0.9, zorder=4, label="BS–RIS LoS")
 
-    ax.annotate("Jalan A", (-e * 0.72, 0), color=TEXT_MUTED, fontsize=10,
+    ax.annotate("Street A", (-e * 0.72, 0), color=TEXT_MUTED, fontsize=10,
                 ha="center", va="center", zorder=4)
     # va="top" membuat teks tumbuh ke bawah dari titik ini, sehingga tidak
     # pernah terpotong tepi atas sumbu berapa pun panjang labelnya.
-    ax.annotate("Jalan B", (0, e * 0.94), color=TEXT_MUTED, fontsize=10,
+    ax.annotate("Street B", (0, e * 0.94), color=TEXT_MUTED, fontsize=10,
                 ha="center", va="top", rotation=90, zorder=4)
 
     ax.set_xlim(-e, e)
@@ -113,9 +124,9 @@ def plot_f1_layout(spec, placement, out_path: str | Path,
     ax.set_aspect("equal")
     ax.set_xlabel("x [m]", color=TEXT_MUTED)
     ax.set_ylabel("y [m]", color=TEXT_MUTED)
-    title = "F1 — Tata letak scene sintetis berbentuk L"
+    title = "Synthetic L-shaped scene layout"
     if los_ris_fraction is not None:
-        title += f"\nLoS RIS→ROI: {100 * los_ris_fraction:.0f}% titik grid"
+        title += f"\nRIS→ROI LoS: {100 * los_ris_fraction:.0f}% of grid points"
     ax.set_title(title, fontsize=11)
     _style_axes(ax)
     ax.legend(loc="lower left", fontsize=8, framealpha=0.95)
@@ -135,47 +146,78 @@ def _to_grid(grid_xy, values):
     return xs, ys, g
 
 
-def _panel(ax, fig, grid_xy, values, threshold_db, cbar_label):
+def _diverging_limits(arrays, threshold_db: float) -> tuple[float, float]:
+    """Batas skala diverging yang simetris terhadap ``threshold_db``.
+
+    Menerima BEBERAPA array supaya dua panel bisa berbagi satu skala. Berbagi
+    itu wajib pada F2 panel (b) dan (c): dua peta SCNR yang masing-masing
+    diskalakan sendiri akan sama-sama penuh warna, dan selisih 26 dB di
+    antaranya justru hilang.
+    """
+    values = np.concatenate([np.asarray(a, dtype=float).ravel()
+                             for a in arrays])
+    values = values[np.isfinite(values)]
+    span = max(abs(float(np.percentile(values, 1)) - threshold_db),
+               abs(float(np.percentile(values, 99)) - threshold_db), 1.0)
+    return threshold_db - span, threshold_db + span
+
+
+def _panel(ax, grid_xy, values, threshold_db, vlim=None):
     """Satu peta diverging dengan titik tengah tepat di ambangnya.
 
     Titik tengah netral diletakkan DI ambang, bukan di nol atau di median,
     supaya batas lulus/tidak terbaca dari warnanya sendiri dan tidak perlu
     dicari lewat kontur. Kontur hitam tetap digambar sebagai jangkar.
+
+    :returns: ``(im, fraksi titik >= ambang)``; colorbar diurus pemanggil,
+        karena beberapa panel bisa berbagi satu colorbar.
     """
     xs, ys, g = _to_grid(grid_xy, values)
     finite = g[np.isfinite(g)]
-    span = max(abs(float(np.percentile(finite, 1)) - threshold_db),
-               abs(float(np.percentile(finite, 99)) - threshold_db), 1.0)
+    vmin, vmax = vlim if vlim is not None else _diverging_limits([finite],
+                                                                 threshold_db)
     im = ax.pcolormesh(xs, ys, g, cmap="RdBu_r", shading="nearest",
-                       vmin=threshold_db - span, vmax=threshold_db + span)
-    ax.contour(xs, ys, g, levels=[threshold_db], colors="#000000",
-               linewidths=1.2)
+                       vmin=vmin, vmax=vmax)
+    # Kontur hanya digambar bila ambangnya memang dilewati di dalam peta;
+    # memaksa level di luar rentang data memunculkan peringatan matplotlib
+    # dan tidak menggambar apa pun.
+    if float(np.min(finite)) < threshold_db < float(np.max(finite)):
+        ax.contour(xs, ys, g, levels=[threshold_db], colors="#000000",
+                   linewidths=1.2)
     ax.set_aspect("equal")
     ax.set_xlabel("x [m]", color=TEXT_MUTED)
     _style_axes(ax)
-    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
-    cb.set_label(cbar_label, color=TEXT_MUTED, fontsize=9)
+    return im, float(np.mean(finite >= threshold_db))
+
+
+def _attach_colorbar(fig, im, axes, label, threshold_db):
+    cb = fig.colorbar(im, ax=axes, fraction=0.046, pad=0.02)
+    cb.set_label(label, color=TEXT_MUTED, fontsize=9)
     cb.ax.tick_params(colors=TEXT_MUTED, labelsize=9)
     cb.ax.axhline(threshold_db, color="k", linewidth=1.2)
-    return float(np.mean(finite >= threshold_db))
+    return cb
 
 
 def plot_f2_coverage(grid_xy, ris_gain_db, scnr_ris_db, scnr_direct_db,
                      out_path: str | Path, m_elements: int, p_max_dbm: float,
                      gain_threshold_db: float, gamma_db: float) -> Path:
-    """F2 — apa yang RIS tambahkan di ROI: dua panel, dua kriteria.
+    """F2 — apa yang RIS tambahkan di ROI: tiga panel, satu per pertanyaan.
 
-    Panel kiri adalah **penguatan** komunikasi, yaitu MRT pada kanal efektif
-    ber-RIS dikurangi MRT pada jalur langsung saja: tiap sistem memakai
-    beamformer terbaiknya sendiri. Perbandingan pada precoder yang SAMA
-    (``a_bar``) tidak dipakai lagi -- ``a_bar`` dioptimalkan untuk mencapai
-    RIS dan melumpuhkan jalur langsung, sehingga melebih-lebihkan peran RIS
-    (+8,8 dB lawan +1,4 dB pada geometri lama; docs/LOG.md 2026-11-11 (e)).
+    * **(a)** penguatan komunikasi: MRT pada kanal efektif ber-RIS dikurangi
+      MRT pada jalur langsung saja, yaitu tiap sistem memakai beamformer
+      terbaiknya sendiri. Perbandingan pada precoder yang SAMA (``a_bar``)
+      tidak dipakai lagi -- ``a_bar`` dioptimalkan untuk mencapai RIS dan
+      melumpuhkan jalur langsung, sehingga melebih-lebihkan peran RIS
+      (+8,8 dB lawan +1,4 dB pada geometri lama; docs/LOG.md 2026-11-11 (e)).
+    * **(b)** SNR radar ideal (E7, rho = 1) **tanpa RIS**.
+    * **(c)** SNR radar ideal **lewat RIS**.
 
-    Panel kanan adalah SNR radar ideal (E7, rho = 1) **lewat RIS**, dengan
-    kontur Gamma. Fraksi ROI yang memenuhi Gamma tanpa RIS ikut dilaporkan di
-    judulnya: di geometri NLoS ini ia praktis nol, dan menggambarnya sebagai
-    peta ketiga hanya akan menjadi bidang biru rata.
+    Panel (b) dan (c) berbagi satu skala warna dan satu kontur Gamma, karena
+    itulah yang membuat keduanya bisa dibandingkan dengan mata: diskalakan
+    sendiri-sendiri, keduanya akan sama-sama merah penuh dan selisih 26 dB di
+    antaranya hilang. (b) digambar sebagai peta tersendiri sejak Fase 9 --
+    sebelumnya fraksinya hanya dilaporkan sebagai angka di judul (c), yang
+    menyembunyikan bahwa sebarannya di ROI sama sekali tidak rata.
 
     Gambar ini menggantikan F2 lama (peta SNR mutlak pada precoder yang sama)
     dan menyerap F2b (peta radar terpisah), yang menjadi mubazir.
@@ -183,27 +225,39 @@ def plot_f2_coverage(grid_xy, ris_gain_db, scnr_ris_db, scnr_direct_db,
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8), dpi=200,
+    # ROI berukuran 5,5 x 20 m; dengan aspek sama tiap panel menjadi 1:3,6,
+    # jadi tiga panel berdampingan justru mendekati bujur sangkar. Kanvas
+    # dirapatkan ke ukuran itu (Fase 9) -- (11,0 x 4,8) yang lama hampir
+    # seluruhnya ruang kosong di kiri-kanan tiap peta.
+    fig, axes = plt.subplots(1, 3, figsize=(7.8, 5.0), dpi=200,
                              constrained_layout=True, sharey=True)
+    fig.get_layout_engine().set(w_pad=0.02, h_pad=0.02, wspace=0.02)
 
-    frac_gain = _panel(axes[0], fig, grid_xy, ris_gain_db, gain_threshold_db,
-                       "penguatan RIS [dB]")
-    axes[0].set_title("(a) Penguatan RIS komunikasi, MRT vs MRT\n"
-                      rf"{100 * frac_gain:.1f}% titik $\geq$ "
-                      rf"{gain_threshold_db:.0f} dB", fontsize=10)
+    im_gain, frac_gain = _panel(axes[0], grid_xy, ris_gain_db,
+                                gain_threshold_db)
+    axes[0].set_title("(a) RIS communication gain\n"
+                      rf"{100 * frac_gain:.1f}% of points $\geq$ "
+                      rf"{gain_threshold_db:.0f} dB", fontsize=9)
     axes[0].set_ylabel("y [m]", color=TEXT_MUTED)
+    _attach_colorbar(fig, im_gain, axes[0], "RIS gain [dB]", gain_threshold_db)
 
-    frac_ris = _panel(axes[1], fig, grid_xy, scnr_ris_db, gamma_db,
-                      "SCNR ideal [dB]")
-    direct = np.asarray(scnr_direct_db, dtype=float)
-    frac_dir = float(np.mean(direct >= gamma_db))
-    axes[1].set_title(r"(b) SNR radar ideal lewat RIS ($\rho$ = 1)" "\n"
-                      rf"{100 * frac_ris:.1f}% titik $\geq$ $\Gamma$ = "
-                      rf"{gamma_db:.0f} dB; tanpa RIS {100 * frac_dir:.1f}%",
-                      fontsize=10)
+    vlim = _diverging_limits([scnr_direct_db, scnr_ris_db], gamma_db)
+    im_dir, frac_dir = _panel(axes[1], grid_xy, scnr_direct_db, gamma_db, vlim)
+    axes[1].set_title("(b) Ideal sensing SCNR, no RIS\n"
+                      rf"{100 * frac_dir:.1f}% of points $\geq$ $\Gamma$ = "
+                      rf"{gamma_db:.0f} dB", fontsize=9)
+    im_ris, frac_ris = _panel(axes[2], grid_xy, scnr_ris_db, gamma_db, vlim)
+    axes[2].set_title("(c) Ideal sensing SCNR via RIS\n"
+                      rf"{100 * frac_ris:.1f}% of points $\geq$ $\Gamma$ = "
+                      rf"{gamma_db:.0f} dB", fontsize=9)
+    _attach_colorbar(fig, im_ris, [axes[1], axes[2]], "Ideal SCNR [dB]",
+                     gamma_db)
 
-    fig.suptitle(f"F2 — kontribusi RIS di ROI, M = {m_elements}, "
-                 rf"$P_{{\max}}$ = {p_max_dbm:.0f} dBm", fontsize=12)
+    fig.suptitle(f"RIS contribution over the ROI, M = {m_elements}, "
+                 rf"$P_{{\max}}$ = {p_max_dbm:.0f} dBm"
+                 "\n"
+                 r"(b) and (c) share one colour scale and one $\Gamma$ contour",
+                 fontsize=10)
     fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     return out_path
@@ -214,6 +268,9 @@ def plot_f3_e0(table: dict, out_path, tolerance_db: float = 0.1):
 
     Dibuat dari ``T1_e0.json`` yang sudah ditulis, bukan dari variabel dalam
     memori, sesuai konvensi "gambar dibuat dari file hasil" (CLAUDE.md).
+
+    Label panel ``E0-1``..``E0-3`` DIPERTAHANKAN: itu penomoran sub-uji di
+    §4.5, bukan nomor gambar, jadi ia tidak diatur LaTeX.
     """
     import matplotlib.pyplot as plt
 
@@ -225,12 +282,12 @@ def plot_f3_e0(table: dict, out_path, tolerance_db: float = 0.1):
 
     d2 = [r["d2_m"] for r in rows]
     axes[0].plot(d2, [r["hybrid_db"] for r in rows], "o-",
-                 label="hibrida (Sionna RT)")
+                 label="hybrid (Sionna RT)")
     axes[0].plot(d2, [r["tang2021_db"] for r in rows], "s--",
-                 label="Tang dkk. (2021), Pers. 6")
-    axes[0].set_xlabel("d(RIS-titik) (m)")
-    axes[0].set_ylabel("penguatan kaskade (dB)")
-    axes[0].set_title("E0-2: kalibrasi fisika\n"
+                 label="Tang et al. (2021), Eq. (6)")
+    axes[0].set_xlabel("d(RIS–point) (m)")
+    axes[0].set_ylabel("cascade gain (dB)")
+    axes[0].set_title("E0-2: physical calibration\n"
                       f"calibration_db = {table['calibration_db']:+.2f} dB")
     axes[0].legend()
 
@@ -238,22 +295,22 @@ def plot_f3_e0(table: dict, out_path, tolerance_db: float = 0.1):
     axes[1].bar(range(len(names)), [cascade[n]["max_abs_db"] for n in names],
                 color="tab:blue")
     axes[1].axhline(tolerance_db, color="crimson", ls="--",
-                    label=f"ambang {tolerance_db} dB")
+                    label=f"tolerance {tolerance_db} dB")
     axes[1].set_xticks(range(len(names)))
     axes[1].set_xticklabels(names, rotation=20, ha="right")
-    axes[1].set_ylabel("|selisih| maks (dB)")
+    axes[1].set_ylabel("max |difference| (dB)")
     axes[1].set_yscale("log")
-    axes[1].set_title("E0-1: uji implementasi\nRT lawan Friis analitik")
+    axes[1].set_title("E0-1: implementation test\nRT vs analytic Friis")
     axes[1].legend()
 
     axes[2].hist(table["_synthetic_delta_db"], bins=30, color="tab:green",
                  alpha=0.85)
     axes[2].axvline(syn["median_db"], color="k", ls="--",
                     label=f"median {syn['median_db']:+.2f} dB")
-    axes[2].set_xlabel("synthetic - per elemen (dB)")
-    axes[2].set_ylabel("jumlah titik")
+    axes[2].set_xlabel("synthetic − per-element (dB)")
+    axes[2].set_ylabel("number of grid points")
     axes[2].set_title(f"E0-3: synthetic array\n"
-                      f"p95 |selisih| = {syn['p95_abs_db']:.2f} dB")
+                      f"p95 |difference| = {syn['p95_abs_db']:.2f} dB")
     axes[2].legend()
 
     for ax in axes:
@@ -309,8 +366,8 @@ def _ordered(names):
 
 def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
                      metric: str = "reward_per_step",
-                     ylabel: str = "reward val per langkah"):
-    """F4 - kurva pelatihan M1, M2, A1 (rata-rata +- std antar-seed, Sec 9).
+                     ylabel: str = "validation reward per step"):
+    """F4 - kurva pelatihan (rata-rata +- std antar-seed, Sec 9).
 
     :param curves: ``{paper_id: {"timesteps": [...], "seeds": {seed: [...]}}}``
     :param baselines: ``{nama: nilai}`` digambar sebagai garis mendatar.
@@ -319,10 +376,17 @@ def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
     (Sec 9) pita CI akan lebar dan menyesatkan; std antar-seed menjawab
     pertanyaan yang memang ingin dijawab kurva pelatihan, yaitu seberapa
     bergantung hasilnya pada seed.
+
+    **Legenda diletakkan DI LUAR sumbu** (Fase 9). Label garis baseline
+    ditempel di tepi kanan, dan legenda di dalam sumbu menutupinya di sudut
+    mana pun ia ditaruh: sudut kiri-atas dilewati kurva A1-FullCSI, sudut
+    kanan-bawah persis tempat label B1 berada. Menaruhnya di luar membuat
+    gambar ini aman terhadap data yang berubah, bukan hanya terhadap data
+    yang ada sekarang.
     """
     import matplotlib.pyplot as plt
 
-    fig, ax = plt.subplots(figsize=(7.0, 4.4), constrained_layout=True)
+    fig, ax = plt.subplots(figsize=(7.0, 4.6), constrained_layout=True)
     # Urutan legenda mengikuti METHOD_ORDER, bukan urutan kunci dict: dict
     # datang dari urutan METHODS di train.py, yang masih M1 lebih dulu.
     for paper_id in _ordered(curves):
@@ -333,7 +397,7 @@ def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
         mean, std = values.mean(axis=0), values.std(axis=0)
         color = METHOD_COLORS.get(paper_id, OKABE_ITO["black"])
         ax.plot(steps / 1e6, mean, color=color, lw=1.8,
-                label=f"{paper_id} ({values.shape[0]} seed)")
+                label=f"{paper_id} ({values.shape[0]} seeds)")
         ax.fill_between(steps / 1e6, mean - std, mean + std, color=color,
                         alpha=0.18, lw=0)
     for name, value in (baselines or {}).items():
@@ -344,12 +408,16 @@ def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
                     xytext=(-4, 3), textcoords="offset points",
                     ha="right", va="bottom", fontsize=8,
                     color=METHOD_COLORS.get(name, TEXT_MUTED))
-    ax.set_xlabel("langkah lingkungan (juta)")
+    ax.set_xlabel("environment steps (millions)")
     ax.set_ylabel(ylabel)
-    ax.set_title("F4 - kurva pelatihan pada split val")
-    ax.legend(frameon=False, loc="lower right")
+    ax.set_title("Training curves on the validation split")
+    ncol = max(1, len(curves))
+    ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.16),
+              ncol=ncol, fontsize=9)
     _style_axes(ax)
-    fig.savefig(out_path, dpi=200)
+    # bbox_inches="tight" supaya legenda di luar sumbu ikut tersimpan;
+    # constrained_layout sendiri tidak memperhitungkannya.
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -371,9 +439,9 @@ def plot_f5_rate_cdf(steps, out_path, scnr_threshold_db: float | None = None):
         x, f = ecdf(values)
         ax.plot(x, f, lw=1.8, color=METHOD_COLORS.get(method, OKABE_ITO["black"]),
                 label=method)
-    ax.set_xlabel("rate minimum antar-pengguna (bit/s/Hz)")
-    ax.set_ylabel("CDF empiris atas langkah")
-    ax.set_title("F5 - distribusi rate minimum pada set test")
+    ax.set_xlabel("minimum per-user rate (bit/s/Hz)")
+    ax.set_ylabel("empirical CDF over steps")
+    ax.set_title("Distribution of the minimum rate on the test set")
     ax.set_ylim(0.0, 1.0)
     ax.legend(frameon=False, loc="lower right", ncol=2, fontsize=8)
     _style_axes(ax)
@@ -419,9 +487,9 @@ def plot_f6_episode(steps, out_path, trajectory_index: int,
                      xytext=(-3, 4), textcoords="offset points", ha="right",
                      fontsize=8, color=TEXT_MUTED)
     axes[0].set_ylabel("SCNR (dB)")
-    axes[0].set_title(f"F6 - episode contoh: lintasan {trajectory_index}, "
-                      f"seed derau {noise_seed}", fontsize=11)
-    axes[0].annotate(r"$\blacktriangledown$ = langkah di bawah $\Gamma$",
+    axes[0].set_title(f"Example episode: trajectory {trajectory_index}, "
+                      f"noise seed {noise_seed}", fontsize=11)
+    axes[0].annotate(r"$\blacktriangledown$ = step below $\Gamma$",
                      xy=(0.0, 1.0), xycoords="axes fraction",
                      xytext=(2, -11), textcoords="offset points",
                      fontsize=8, color=TEXT_MUTED)
@@ -432,8 +500,8 @@ def plot_f6_episode(steps, out_path, trajectory_index: int,
                      xy=(1.0, sigma_max_m), xycoords=("axes fraction", "data"),
                      xytext=(-3, -12), textcoords="offset points", ha="right",
                      fontsize=8, color=TEXT_MUTED)
-    axes[1].set_ylabel("galat posisi tracker (m)")
-    axes[1].set_xlabel("waktu (s)")
+    axes[1].set_ylabel("tracker position error (m)")
+    axes[1].set_xlabel("time (s)")
     for ax in axes:
         _style_axes(ax)
     fig.savefig(out_path, dpi=200)
@@ -448,9 +516,14 @@ def plot_f8_tradeoff(points, out_path):
         "per_seed"(opsional)}]``.
 
     Tiap metode menjadi satu garis yang menghubungkan nilai Gamma-nya, dengan
-    penanda yang membesar seiring Gamma. Seed individual M1 ikut digambar
-    sebagai titik kecil: pada Gamma = 16 dB sebarannya besar, dan rata-rata
-    saja akan menyembunyikannya (docs/LOG.md 2026-11-12 (c)).
+    penanda yang membesar seiring Gamma. Seed individual ikut digambar sebagai
+    titik kecil: pada Gamma = 16 dB sebarannya besar, dan rata-rata saja akan
+    menyembunyikannya (docs/LOG.md 2026-11-12 (c)).
+
+    **Label Gamma digeser dan diberi latar putih** (Fase 9). Titik per seed
+    jatuh di sekeliling titik rata-rata, jadi label yang ditempel rapat
+    tertimpa olehnya. Digeser ke atas-kanan dan digambar paling akhir
+    (zorder tertinggi) dengan kotak putih tipis.
     """
     import matplotlib.pyplot as plt
 
@@ -503,14 +576,20 @@ def plot_f8_tradeoff(points, out_path):
             anchor = group[-1]
             ax.annotate(label, xy=(anchor["scnr_compliance"],
                                    anchor["min_rate"]),
-                        xytext=(6, -3), textcoords="offset points",
-                        fontsize=7, color=color)
-    ax.set_xlabel(r"pemenuhan SCNR (fraksi langkah dengan SCNR $\geq$ $\Gamma$)")
-    ax.set_ylabel("rate minimum rata-rata (bit/s/Hz)")
-    ax.set_title(r"F8 - trade-off komunikasi-sensing; label = $\Gamma$ (dB)")
-    ax.legend(frameon=False, loc="lower left", ncol=2, fontsize=8)
+                        xytext=(9, 7), textcoords="offset points",
+                        fontsize=7, color=color, zorder=6,
+                        bbox=dict(boxstyle="round,pad=0.12", fc="white",
+                                  ec="none", alpha=0.78))
+    ax.set_xlabel(r"SCNR compliance (fraction of steps with SCNR $\geq$ $\Gamma$)")
+    ax.set_ylabel("mean minimum rate (bit/s/Hz)")
+    ax.set_title(r"Communication–sensing trade-off; labels = $\Gamma$ (dB)")
+    # Legenda DI LUAR sumbu, alasan yang sama seperti F4: di sudut kiri-bawah
+    # ia menimpa label Gamma milik B0 (yang justru turun ke sana pada
+    # Gamma = 16 dB), dan di sudut mana pun ia bersaing dengan sebuah titik.
+    ax.legend(frameon=False, loc="upper center", bbox_to_anchor=(0.5, -0.15),
+              ncol=max(1, len(by_method)), fontsize=8)
     _style_axes(ax)
-    fig.savefig(out_path, dpi=200)
+    fig.savefig(out_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -530,10 +609,10 @@ def plot_f7_pmax_speed(table, out_path, speed_bins, metrics=None):
     """
     import matplotlib.pyplot as plt
 
-    metrics = metrics or (("min_rate", "rate minimum (bit/s/Hz)"),
-                          ("scnr_compliance", "pemenuhan SCNR"))
+    metrics = metrics or (("min_rate", "minimum rate (bit/s/Hz)"),
+                          ("scnr_compliance", "SCNR compliance"))
     axes_spec = (("p_max_dbm", "$P_{max}$ (dBm)"),
-                 ("speed_group", "kelompok kecepatan target (m/s)"))
+                 ("speed_group", "target speed group (m/s)"))
     fig, axs = plt.subplots(len(metrics), 2, figsize=(9.2, 2.6 * len(metrics) + 1.0),
                             constrained_layout=True, squeeze=False,
                             sharey="row")
@@ -560,8 +639,8 @@ def plot_f7_pmax_speed(table, out_path, speed_bins, metrics=None):
                 ax.set_ylabel(ylabel)
             _style_axes(ax)
     axs[0][1].legend(frameon=False, loc="best", ncol=2, fontsize=8)
-    fig.suptitle("F7 - kinerja terhadap daya pancar dan kecepatan target "
-                 "(tanpa latih ulang)", fontsize=11)
+    fig.suptitle("Performance vs transmit power and target speed "
+                 "(no retraining)", fontsize=11)
     fig.savefig(out_path, dpi=200)
     plt.close(fig)
     return out_path

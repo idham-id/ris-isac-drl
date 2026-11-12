@@ -52,16 +52,19 @@ from risisac.train import METHODS, run_dir                        # noqa: E402
 #: metode utama lebih dulu, lalu ablasi OBSERVASI (A1-FullCSI, yang berbeda
 #: dari A1 hanya pada mode observasi), lalu ablasi PARAMETERISASI FASA
 #: (M1 beserta sapuan kappa, dan M2), lalu pembanding.
+#: Label di sini hanya cadangan: tabel LaTeX memetakan labelnya sendiri dari
+#: kolom ``metode`` dan ``config`` (``eval/tables.py``, E5_LABELS), supaya
+#: teksnya bisa diubah tanpa menjalankan ulang E5 dan E6.
 E5_ROWS = (
-    ("A1 absolut, observasi parsial (utama)", "base", "A1"),
-    ("A1-FullCSI absolut, observasi penuh", "base", "A1-FullCSI"),
-    ("M1 inkremental, kappa = 0,10", "base", "M1"),
-    ("M1 inkremental, kappa = 0,25", "kappa025", "M1"),
-    ("M1 inkremental, kappa = 0,50", "kappa050", "M1"),
-    ("M2 inkremental, CSI penuh", "base", "M2"),
-    ("B0 tanpa RIS (CSI langsung sempurna)", "base", "B0"),
-    ("B2 geometris (absolut)", "base", "B2"),
-    ("B3 oracle (absolut)", "base", "B3"),
+    ("A1 absolute phase, partial obs. (main)", "base", "A1"),
+    ("A1-FullCSI absolute phase, full obs.", "base", "A1-FullCSI"),
+    ("M1 incremental phase, kappa = 0.10", "base", "M1"),
+    ("M1 incremental phase, kappa = 0.25", "kappa025", "M1"),
+    ("M1 incremental phase, kappa = 0.50", "kappa050", "M1"),
+    ("M2 incremental phase, full CSI", "base", "M2"),
+    ("B0 no RIS (perfect direct CSI)", "base", "B0"),
+    ("B2 geometric (absolute phase)", "base", "B2"),
+    ("B3 oracle (absolute phase)", "base", "B3"),
 )
 
 

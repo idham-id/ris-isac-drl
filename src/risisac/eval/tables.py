@@ -7,6 +7,15 @@ bisa diam-diam menyimpang dari data.
 Keluarannya LaTeX mentah dengan ``booktabs`` (``\toprule`` dst.) dan tanpa
 paket tambahan: tidak ada ``siunitx``, tidak ada ``\begin{document}``. Berkas
 hasilnya untuk di-``\input`` dari manuskrip.
+
+**Bahasa keluaran: Inggris, dengan titik desimal** (Fase 9). Komentar dan
+docstring tetap bahasa Indonesia; keduanya untuk yang mengerjakan kode.
+
+**Tidak ada kode "T#" di ``\caption``** (Fase 9). Nomor tabel diatur LaTeX
+lewat urutan ``\begin{table}``, dan ``\label`` sudah menyediakan rujukan
+silangnya; menuliskannya juga di dalam caption berarti dua sumber kebenaran
+yang pasti berselisih begitu satu tabel dipindahkan. Nama BERKAS tetap
+memakai awalan ``T1_``..``T4_``.
 """
 
 from __future__ import annotations
@@ -25,7 +34,7 @@ class Raw(str):
 
     Penandanya eksplisit, bukan ditebak dari isinya. Menebak -- misalnya
     "lewatkan kalau diapit ``$``" -- gagal pada label campuran seperti
-    ``$M$ (baris $\times$ kolom)``, yang berawalan ``$`` tetapi tidak
+    ``$M$ (rows $\times$ columns)``, yang berawalan ``$`` tetapi tidak
     berakhiran ``$``, lalu keluar sebagai sampah backslash di tabel. Aturannya:
     apa pun yang ditulis di berkas ini boleh ``Raw``; apa pun yang datang dari
     file hasil selalu di-escape.
@@ -43,7 +52,7 @@ def escape(text) -> str:
 
 
 def number(value, digits: int = 3, plus: bool = False) -> Raw:
-    r"""Format angka ala Indonesia (koma desimal) untuk tabel paper.
+    r"""Format angka untuk tabel paper: **titik desimal** (Fase 9).
 
     Tanda ditulis sebagai ``$-$`` / ``$+$``, bukan ``-`` / ``+``: di mode teks
     LaTeX, ``-`` adalah tanda HUBUNG dan tercetak jauh lebih pendek daripada
@@ -53,7 +62,6 @@ def number(value, digits: int = 3, plus: bool = False) -> Raw:
     if value is None or (isinstance(value, float) and not np.isfinite(value)):
         return Raw("--")
     text = f"{float(value):+.{digits}f}" if plus else f"{float(value):.{digits}f}"
-    text = text.replace(".", ",")
     if text.startswith("-"):
         text = "$-$" + text[1:]
     elif text.startswith("+"):
@@ -69,7 +77,7 @@ def sci(value) -> Raw:
     exp = int(np.floor(np.log10(abs(v))))
     mant = v / (10.0 ** exp)
     head = (f"{int(round(mant))}" if abs(mant - round(mant)) < 1e-9
-            else f"{mant:.1f}".replace(".", "{,}"))
+            else f"{mant:.1f}")
     return Raw(f"${head} \\times 10^{{{exp}}}$")
 
 
@@ -102,38 +110,39 @@ def t1_channel_validation(e0: dict) -> str:
     """T1 -- galat validasi kanal, dari ``results/e0/<hash>/T1_e0.json``."""
     per = e0["per_element"]
     rows = [
-        [Raw(r"Amplitudo per elemen $\mathbf{G}$ (BS--RIS)"),
+        [Raw(r"Per-element amplitude, $\mathbf{G}$ (BS--RIS)"),
          number(per["G_amplitude_max_db"], 4), "dB"],
-        [Raw(r"Amplitudo per elemen $\mathbf{g}$ (RIS--titik)"),
+        [Raw(r"Per-element amplitude, $\mathbf{g}$ (RIS--point)"),
          number(per["g_amplitude_max_db"], 4), "dB"],
-        [Raw(r"Fasa per elemen $\mathbf{G}$"),
-         number(per["G_phase_max_deg"], 4), "derajat"],
-        [Raw(r"Fasa per elemen $\mathbf{g}$"),
-         number(per["g_phase_max_deg"], 4), "derajat"],
+        [Raw(r"Per-element phase, $\mathbf{G}$"),
+         number(per["G_phase_max_deg"], 4), "deg"],
+        [Raw(r"Per-element phase, $\mathbf{g}$"),
+         number(per["g_phase_max_deg"], 4), "deg"],
     ]
     for name, item in e0["cascade"].items():
-        rows.append([f"Kaskade, profil {name}",
+        rows.append([f"Cascade, {name} profile",
                      number(item["max_abs_db"], 4), "dB"])
-    rows.append(["Kalibrasi terhadap Tang dkk. (2021) Pers. (6)",
+    rows.append(["Calibration against Tang et al. (2021), Eq. (6)",
                  number(e0["calibration_db"], 2), "dB"])
     worst = max(float(i["max_abs_db"]) for i in e0["cascade"].values())
     return latex_table(
-        ["Besaran yang diuji", "Selisih", "Satuan"], rows,
-        caption=("T1 -- validasi model kanal hibrida terhadap model analitik "
-                 "(E0)."),
+        ["Quantity under test", "Difference", "Unit"], rows,
+        caption=("Validation of the hybrid channel model against the "
+                 "analytic model (E0)."),
         label="tab:t1-channel-validation", align="lrl",
-        notes=(f"Ambang uji implementasi {number(e0['tolerance_db'], 1)} dB; "
-               f"selisih terburuk {number(worst, 4)} dB. "
-               r"\texttt{calibration\_db} dicatat, tidak diterapkan ke kanal."))
+        notes=(f"Implementation-test tolerance {number(e0['tolerance_db'], 1)} "
+               f"dB; worst difference {number(worst, 4)} dB. "
+               r"\texttt{calibration\_db} is recorded, not applied to the "
+               "channel."))
 
 
 # ------------------------------------------------------------------- T2 (E3)
 #: Kolom T2: (kunci di T2.csv, judul kolom, digit, pakai tanda +).
-T2_FIELDS = ((("reward_per_step"), "Reward/langkah", 3, True),
-             ("min_rate", "Rate min.", 2, False),
-             ("scnr_compliance", "Pemenuhan SCNR", 3, False),
-             ("track_duration_s", "Durasi track (s)", 2, False),
-             ("tracker_error_m", "Galat tracker (m)", 2, False))
+T2_FIELDS = ((("reward_per_step"), "Reward/step", 3, True),
+             ("min_rate", "Min. rate", 2, False),
+             ("scnr_compliance", "SCNR compliance", 3, False),
+             ("track_duration_s", "Track duration (s)", 2, False),
+             ("tracker_error_m", "Tracker error (m)", 2, False))
 
 #: Nama metode di paper. Kunci-kunci ini SAMA dengan kunci di file hasil dan
 #: nama direktori run; yang berubah di Fase 8 hanya teks tampilannya, supaya
@@ -142,16 +151,16 @@ METHOD_LABELS = {"B0": "B0 No-RIS",
                  "B1": "B1 Random", "B2": "B2 Geometric",
                  "B3": "B3 Oracle-GD", "B4-D5": "B4 Oracle-GD-stale(5)",
                  "B4-D10": "B4 Oracle-GD-stale(10)",
-                 "A1": "A1 PPO-PO-absolute (utama)",
-                 "A1-FullCSI": "A1-FullCSI PPO-absolute, CSI penuh",
-                 "M1": "M1 PPO-PO (ablasi fasa inkremental)",
-                 "M2": "M2 PPO-FullCSI (ablasi fasa inkremental)"}
+                 "A1": "A1 PPO-PO-absolute (main)",
+                 "A1-FullCSI": "A1-FullCSI PPO-absolute, full CSI",
+                 "M1": "M1 PPO-PO (incremental-phase ablation)",
+                 "M2": "M2 PPO-FullCSI (incremental-phase ablation)"}
 
 
 def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
                     with_ci: bool = True) -> str:
     """T2 -- hasil utama set test, dari ``T2.csv`` (indeks = metode)."""
-    header = ["Metode", "Episode"] + [h for _, h, _, _ in T2_FIELDS]
+    header = ["Method", "Episodes"] + [h for _, h, _, _ in T2_FIELDS]
     rows = []
     for method, row in t2.iterrows():
         cells = [METHOD_LABELS.get(method, method), f"{int(row['episodes'])}"]
@@ -164,19 +173,43 @@ def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
         rows.append(cells)
     return latex_table(
         header, rows,
-        caption=(f"T2 -- hasil set test, $\\Gamma$ = {gamma_db:g} dB, "
+        caption=(f"Test-set results, $\\Gamma$ = {gamma_db:g} dB, "
                  f"$P_{{max}}$ = {p_max_dbm:g} dBm."),
         label="tab:t2-main-results", align="l" + "r" * (len(header) - 1),
-        notes=("Kurung siku: interval kepercayaan 95\\% bootstrap atas "
-               "episode, dikelompokkan per seed. Agen dilaporkan pada "
-               "checkpoint terbaik di val. B0 menghapus kaskade RIS "
-               "seluruhnya dan memakai CSI langsung sempurna: ia lantai "
-               "sistem tanpa RIS, bukan sistem tanpa RIS yang realistis. "
-               "B3/B4 memakai CSI dan posisi sempurna: acuan atas, bukan "
-               "metode terapan."))
+        notes=("Brackets: 95\\% bootstrap confidence interval over episodes, "
+               "clustered by seed. Agents are reported at their best "
+               "validation checkpoint. B0 removes the RIS cascade entirely "
+               "and is given perfect direct CSI: it is the floor of a "
+               "RIS-free system, not a realistic RIS-free system. B3/B4 use "
+               "perfect CSI and perfect positions: upper references, not "
+               "deployable methods."))
 
 
 # ---------------------------------------------------------------- T3 (E5+E6)
+#: Label baris T3a, dipetakan dari kolom ``metode`` dan ``config`` di
+#: ``T3_e5_ablation.csv``. Dipetakan di SINI, bukan dibaca dari kolom
+#: ``varian``, supaya tabel bisa diterjemahkan tanpa menjalankan ulang E5 --
+#: dan E5 memuat pengukuran waktu E6 yang memang tidak boleh diulang hanya
+#: demi teks (Fase 9: "tanpa menghitung ulang apa pun").
+E5_LABELS = {
+    ("A1", "base"): Raw("A1 absolute phase, partial obs. (main)"),
+    ("A1-FullCSI", "base"): Raw("A1-FullCSI absolute phase, full obs."),
+    ("M1", "base"): Raw(r"M1 incremental phase, $\kappa$ = 0.10"),
+    ("M1", "kappa025"): Raw(r"M1 incremental phase, $\kappa$ = 0.25"),
+    ("M1", "kappa050"): Raw(r"M1 incremental phase, $\kappa$ = 0.50"),
+    ("M2", "base"): Raw("M2 incremental phase, full CSI"),
+    ("B0", "base"): Raw("B0 no RIS (perfect direct CSI)"),
+    ("B2", "base"): Raw("B2 geometric (absolute phase)"),
+    ("B3", "base"): Raw("B3 oracle (absolute phase)"),
+}
+
+
+def _e5_label(row):
+    """Label satu baris E5; jatuh kembali ke kolom ``varian`` bila tak dikenal."""
+    key = (str(row.get("metode", "")), str(row.get("config", "")))
+    return E5_LABELS.get(key, row["varian"])
+
+
 def t3_ablation(e5) -> str:
     """T3a -- ablasi parameterisasi fasa DAN observasi pada set test (E5).
 
@@ -186,28 +219,28 @@ def t3_ablation(e5) -> str:
     absolut); baris A1 lawan M1/M2 beserta sapuan kappa mengisolasi
     **parameterisasi fasa**.
     """
-    rows = [[row["varian"], f"{int(row['episode'])}",
+    rows = [[_e5_label(row), f"{int(row['episode'])}",
              number(row["reward_per_step"], 3, True),
              number(row["min_rate"], 2),
              number(row["scnr_compliance"], 3)]
             for _, row in e5.iterrows()]
-    note = ("Seluruh baris memakai $\\lambda$, geometri, dan anggaran "
-            "langkah yang sama; yang berbeda hanya parameterisasi fasa, "
-            "$\\kappa$, atau mode observasi. ")
+    note = ("All rows share the same $\\lambda$, geometry and step budget; "
+            "only the phase parameterisation, $\\kappa$ or observation mode "
+            "differs. ")
     by_method = {str(r["metode"]): r for _, r in e5.iterrows()
                  if "metode" in e5.columns}
     if {"A1", "A1-FullCSI"} <= set(by_method):
         delta = (float(by_method["A1-FullCSI"]["reward_per_step"])
                  - float(by_method["A1"]["reward_per_step"]))
-        note += ("Ablasi observasi pada metode utama, A1-FullCSI dikurangi "
-                 f"A1: {number(delta, 3, True)} reward per langkah. "
-                 "Nilai negatif berarti observasi penuh TIDAK menolong; "
-                 "lihat §9 untuk ujinya.")
+        note += ("Observation ablation on the main method, A1-FullCSI minus "
+                 f"A1: {number(delta, 3, True)} reward per step. A negative "
+                 "value means full CSI does NOT help; see Sec. IX for the "
+                 "significance test.")
     return latex_table(
-        ["Varian", "Episode", "Reward/langkah", "Rate min.",
-         "Pemenuhan SCNR"], rows,
-        caption=("T3a -- ablasi parameterisasi fasa dan observasi pada set "
-                 "test (E5)."),
+        ["Variant", "Episodes", "Reward/step", "Min. rate",
+         "SCNR compliance"], rows,
+        caption=("Ablation of the phase parameterisation and of the "
+                 "observation on the test set (E5)."),
         label="tab:t3-ablation", notes=note)
 
 
@@ -217,33 +250,32 @@ def t3_cost(cost: dict) -> str:
     for paper_id, item in cost.get("agents", {}).items():
         rows.append([METHOD_LABELS.get(paper_id, paper_id),
                      number(item["ms_per_decision"], 3),
-                     f"CPU, observasi {item['observation_dim']}"])
+                     f"CPU, observation {item['observation_dim']}"])
     b2 = cost.get("baselines", {}).get("B2")
     if b2:
         rows.append([METHOD_LABELS["B2"],
                      number(b2["ms_per_decision"], 3), "CPU"])
     b3 = cost.get("baselines", {}).get("B3")
     if b3:
-        rows.append([METHOD_LABELS["B3"] + " (daring)",
+        rows.append([METHOD_LABELS["B3"] + " (online)",
                      number(b3["ms_per_decision_online"], 1),
-                     Raw(f"{b3['device'].upper()}, {b3['iterations']} iterasi "
-                         f"$\\times$ {b3['restarts']} restart")])
-        rows.append([METHOD_LABELS["B3"] + " (teramortisasi)",
+                     Raw(f"{b3['device'].upper()}, {b3['iterations']} "
+                         f"iterations $\\times$ {b3['restarts']} restarts")])
+        rows.append([METHOD_LABELS["B3"] + " (amortised)",
                      number(b3["ms_per_decision_batched"], 2),
-                     f"{b3['device'].upper()}, {b3['batch_steps']} langkah "
-                     f"dibatch sekaligus"])
-    note = "Waktu satu keputusan, diukur di mesin yang sama. "
+                     f"{b3['device'].upper()}, {b3['batch_steps']} steps "
+                     f"batched at once"])
+    note = "Time for one decision, measured on the same machine. "
     for paper_id, key in (("A1", "a1_vs_b3_online_speedup"),
                           ("M1", "m1_vs_b3_online_speedup")):
         speedup = cost.get(key)
         if speedup:
-            note += (f"{paper_id} {int(round(speedup)):,}".replace(",", ".")
-                     + "$\\times$ lebih cepat daripada B3 daring. ")
-    note += ("Angka teramortisasi hanya berlaku bagi acuan offline yang "
-             "seluruh langkahnya dioptimalkan sekaligus, bukan bagi "
-             "pengendali.")
-    return latex_table(["Metode", "ms per keputusan", "Perangkat"], rows,
-                       caption="T3b -- biaya komputasi per keputusan (E6).",
+            note += (f"{paper_id} is {int(round(speedup)):,}"
+                     "$\\times$ faster than online B3. ")
+    note += ("The amortised figure applies only to an offline reference whose "
+             "every step is optimised in one batch, not to a controller.")
+    return latex_table(["Method", "ms per decision", "Device"], rows,
+                       caption="Computational cost per decision (E6).",
                        label="tab:t3-cost", align="lrl", notes=note)
 
 
@@ -259,21 +291,23 @@ PARAM_ROWS = (
     (Raw("$B$"), ("radio", "bandwidth_hz"), "mhz"),
     (Raw("Noise figure"), ("radio", "noise_figure_db"), "db"),
     (Raw("$N_t = N_r$"), ("radio", "bs", "num_tx"), "int"),
-    (Raw(r"$M$ (baris $\times$ kolom)"), ("radio", "ris"), "ris"),
-    (Raw("$P_{max}$ (evaluasi)"), ("radio", "p_max_dbm"), "dbm"),
-    (Raw("$P_{max}$ (pelatihan)"), ("radio", "p_max_train_range_dbm"),
+    (Raw(r"$M$ (rows $\times$ columns)"), ("radio", "ris"), "ris"),
+    (Raw("$P_{max}$ (evaluation)"), ("radio", "p_max_dbm"), "dbm"),
+    (Raw("$P_{max}$ (training)"), ("radio", "p_max_train_range_dbm"),
      "range_dbm"),
-    (Raw("$K$ pengguna"), ("radio", "user", "num_users"), "int"),
-    (Raw("$Q$ target"), ("radio", "target", "num_targets"), "int"),
+    (Raw("$K$ users"), ("radio", "user", "num_users"), "int"),
+    (Raw("$Q$ targets"), ("radio", "target", "num_targets"), "int"),
     (Raw(r"$\sigma_{rcs}$"), ("radio", "target", "rcs_m2"), "m2"),
-    (Raw("$L$ (integrasi)"), ("sensing", "integration_samples"), "int"),
-    (Raw(r"$\xi$ (residu clutter)"), ("sensing", "clutter_residual"), "plain"),
+    (Raw("$L$ (integration samples)"), ("sensing", "integration_samples"),
+     "int"),
+    (Raw(r"$\xi$ (clutter residual)"), ("sensing", "clutter_residual"),
+     "plain"),
     (Raw(r"$\Gamma$"), ("sensing", "scnr_threshold_db"), "db"),
     (Raw(r"$\Delta t$"), ("mobility", "dt_s"), "s"),
-    (Raw("$T$ (langkah episode)"), ("mobility", "episode_steps"), "int"),
+    (Raw("$T$ (steps per episode)"), ("mobility", "episode_steps"), "int"),
     (Raw(r"$\kappa$"), ("action", "phase_step_kappa"), "plain"),
     (Raw(r"$\lambda$"), ("reward", "lambda"), "plain"),
-    (Raw(r"$\epsilon$ (NMSE kanal)"), ("observation", "eff_channel_nmse_db"),
+    (Raw(r"$\epsilon$ (channel NMSE)"), ("observation", "eff_channel_nmse_db"),
      "db"),
     (Raw(r"$\sigma_u$"), ("observation", "user_pos_std_m"), "m"),
     (Raw(r"$\sigma_{ref}$"), ("observation", "target_pos_ref_std_m"), "m"),
@@ -282,10 +316,10 @@ PARAM_ROWS = (
      "int"),
     (Raw(r"Ray tracing: \texttt{samples\_per\_src}"),
      ("ray_tracing", "samples_per_src"), "sci"),
-    (Raw(r"$\gamma$ (diskon)"), ("training", "gamma"), "plain"),
-    (Raw("Laju belajar PPO"), ("training", "ppo", "learning_rate"), "sci"),
-    (Raw("Langkah pelatihan"), ("training", "total_timesteps"), "sci"),
-    (Raw("Seed pelatihan"), ("training", "num_seeds"), "int"),
+    (Raw(r"$\gamma$ (discount)"), ("training", "gamma"), "plain"),
+    (Raw("PPO learning rate"), ("training", "ppo", "learning_rate"), "sci"),
+    (Raw("Training steps"), ("training", "total_timesteps"), "sci"),
+    (Raw("Training seeds"), ("training", "num_seeds"), "int"),
 )
 
 
@@ -298,9 +332,9 @@ def _dig(cfg: dict, path):
 
 def _fmt(value, kind: str) -> Raw:
     if kind == "ghz":
-        return Raw(f"{float(value) / 1e9:g} GHz".replace(".", ","))
+        return Raw(f"{float(value) / 1e9:g} GHz")
     if kind == "mhz":
-        return Raw(f"{float(value) / 1e6:g} MHz".replace(".", ","))
+        return Raw(f"{float(value) / 1e6:g} MHz")
     if kind == "db":
         return Raw(f"{number(value, 1)} dB")
     if kind == "dbm":
@@ -334,8 +368,8 @@ def parameter_table(cfg: dict) -> str:
         except (KeyError, TypeError):
             continue
     return latex_table(
-        ["Parameter", "Nilai"], rows,
-        caption="Parameter sistem dan pelatihan.",
+        ["Parameter", "Value"], rows,
+        caption="System and training parameters.",
         label="tab:parameters", align="ll",
-        notes=(r"Seluruh nilai dibaca langsung dari \texttt{configs/base.yaml} "
-               "saat tabel ini dibuat; tidak ada yang diketik ulang."))
+        notes=(r"Every value is read directly from \texttt{configs/base.yaml} "
+               "when this table is generated; none is retyped."))
