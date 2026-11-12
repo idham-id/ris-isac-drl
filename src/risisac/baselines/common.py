@@ -93,7 +93,8 @@ class Snapshot:
 
 def evaluate_decision(snap: Snapshot, const: SystemConstants,
                       phi: np.ndarray, rho, weights: np.ndarray,
-                      g_hat_tgt: np.ndarray | None = None) -> dict:
+                      g_hat_tgt: np.ndarray | None = None,
+                      no_ris: bool = False) -> dict:
     """Hitung SINR, rate, SCNR, dan reward untuk satu keputusan.
 
     :param g_hat_tgt: (B, M) estimasi kanal RIS->target untuk beam sensing.
@@ -101,22 +102,37 @@ def evaluate_decision(snap: Snapshot, const: SystemConstants,
         sebenarnya. Pada B1/B2 dan agen DRL nilainya berasal dari model LoS
         gelombang sferis ke estimasi posisi target, sehingga beam sensing
         sengaja tidak sempurna -- itu bagian dari masalah, bukan cacat.
+    :param no_ris: B0 (§6.2, Fase 8). Kaskade RIS dihapus dari (E2) dan (E5),
+        dan beam sensing dibangun dari h_{d,t} sebenarnya karena
+        ``estimated_sensing_channel`` -- yang hanya memakai jalur kaskade --
+        bernilai nol tanpa RIS. ``phi`` dan ``g_hat_tgt`` diabaikan.
+        Disediakan di sini, bukan hanya di env, supaya kedua jalur hitung
+        benar-benar bisa dibandingkan untuk B0 seperti untuk B2 dan B3.
     """
     rho = np.asarray(rho, dtype=float)
     weights = np.asarray(weights, dtype=float)
     alpha = pc.rzf_regularization(snap.num_users, const.noise_power_watt,
                                   float(np.max(snap.p_max_watt)))
 
-    h_eff = sm.effective_channel(snap.hd_user, snap.g_user, phi, snap.G)
+    h_eff = (np.array(snap.hd_user, copy=True) if no_ris
+             else sm.effective_channel(snap.hd_user, snap.g_user, phi, snap.G))
     Wc = pc.communication_precoder(h_eff, weights, 1.0, rho, alpha)
     Wc = Wc * np.sqrt(snap.p_max_watt)[..., None, None]
 
-    g_hat = snap.g_tgt[:, 0, :] if g_hat_tgt is None else np.asarray(g_hat_tgt)
-    c_hat = pc.estimated_sensing_channel(g_hat, phi, snap.G)
+    if no_ris:
+        c_hat = snap.hd_tgt_tx[:, 0, :]
+    else:
+        g_hat = (snap.g_tgt[:, 0, :] if g_hat_tgt is None
+                 else np.asarray(g_hat_tgt))
+        c_hat = pc.estimated_sensing_channel(g_hat, phi, snap.G)
     ws = pc.sensing_beam(c_hat, 1.0, rho) * np.sqrt(snap.p_max_watt)[..., None]
 
-    c, b = sm.sensing_channels(snap.hd_tgt_tx, snap.hd_tgt_rx, snap.g_tgt,
-                               phi, snap.G, snap.H)
+    if no_ris:
+        c, b = (np.array(snap.hd_tgt_tx, copy=True),
+                np.array(snap.hd_tgt_rx, copy=True))
+    else:
+        c, b = sm.sensing_channels(snap.hd_tgt_tx, snap.hd_tgt_rx, snap.g_tgt,
+                                   phi, snap.G, snap.H)
     sinr = sm.sinr(h_eff, Wc, ws, const.noise_power_watt, const.beta_s)
     rates = sm.rate(sinr)
     scnr = sm.scnr(c, b, Wc, ws, snap.Hc, const.eta, const.noise_power_watt,

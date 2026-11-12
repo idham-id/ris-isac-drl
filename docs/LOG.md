@@ -2060,3 +2060,81 @@ tanpa persetujuan.
 **Akibatnya:** A1 tetap dilaporkan pada checkpoint terbaik di val, kurvanya
 ditampilkan apa adanya di F4, dan ketidakstabilannya dinyatakan terbuka
 sebagai keterbatasan — opsi 3 di laporan keputusan, bukan opsi 2.
+
+---
+
+## 2026-11-12 — Fase 8: pembingkaian ulang (A1 metode utama), baseline B0, E1 ulang
+
+### Persetujuan yang dicatat
+
+Seluruh perubahan desain di bawah ini **disetujui oleh pengguna pada
+2026-11-12**, diberikan sebagai satu instruksi Fase 8:
+
+1. **A1 (PPO-PO, fasa absolut) menjadi METODE UTAMA.** M1 dan sapuan κ
+   menjadi ablasi "parameterisasi fasa inkremental"; M2 tetap ada sebagai
+   varian inkremental ber-CSI-penuh. Kunci metode dan nama direktori hasil
+   **tidak** diubah — hanya peran, urutan, dan label tampilan.
+2. **§5.3 mendapat paragraf justifikasi fisik fasa absolut per frame**:
+   pembatasan inkremental adalah pilihan desain RL, bukan batasan perangkat
+   keras. Angka waktu penyetelan elemen ditandai
+   `[RUJUKAN PERLU DIVERIFIKASI]`, tidak dikarang.
+3. **Teks hipotesis RQ tidak diubah**; ditambahkan §1.1 "Hasil terhadap
+   hipotesis" yang menyatakan apa adanya (A1 ≈ 73% rate minimum B3, bukan
+   target 80%; A1 di antara B4-D5 dan B4-D10).
+4. **Baseline B0 "No-RIS"** ditambahkan dengan CSI langsung sempurna.
+5. **A1-FullCSI** ditambahkan sebagai ablasi observasi, dan **A1 dilatih
+   ulang pada Γ = 10 dan 16 dB** (1e6 langkah).
+6. **F2 diganti menjadi dua panel** dari data E1; F2b diserap.
+
+Yang **tidak** disetujui dan **tidak** diubah: reward (E9), λ, κ bawaan,
+geometri scene, basis data kanal, dan hiperparameter PPO. `configs/base.yaml`
+tidak disentuh sama sekali, sehingga 21 run Fase 5 tetap sah dan
+`config_hash` base tetap `2ac2654fe51c`.
+
+### Langkah A — E1 dijalankan ulang pada geometri final (GPU)
+
+Hasil E1 yang dipakai Fase 1–7 berasal dari hash `68bdfb2f1292`, yaitu config
+sebelum `reward.lambda` dinaikkan. Ia dijalankan ulang di config sekarang
+(`2ac2654fe51c`) dan diperluas: selain penguatan komunikasi MRT-lawan-MRT,
+kini dihitung juga **SCNR ideal sistem-lawan-sistem** — tiap sistem memakai
+beam terbaiknya sendiri, bukan precoder `a_bar` yang sama untuk keduanya.
+
+| besaran @ P_max = 30 dBm | lewat RIS | langsung saja |
+|---|---|---|
+| penguatan komunikasi (MRT vs MRT) | median **+12,0 dB**, p10 +7,3 dB, 93,2% ROI ≥ 6 dB, RIS menang di **100%** titik | — |
+| SCNR ideal, median | **42,2 dB** | 16,2 dB |
+| SCNR ideal, fraksi ≥ Γ = 13 dB | **1,000** | **0,645** |
+
+Gate 1 tetap **LOLOS** pada kriteria yang sama (`scnr` berbasis `a_bar`
+sengaja dibiarkan sebagai besaran yang digate, supaya riwayat gate tetap bisa
+dibaca).
+
+**Temuan yang bertentangan dengan dugaan:** tanpa RIS sama sekali, SCNR ideal
+sudah memenuhi Γ di **64,5%** titik ROI pada 30 dBm — jalur sensing jauh
+lebih tidak bergantung pada RIS daripada jalur komunikasi. Penyebabnya
+terbaca dari anggaran: η = +32,3 dB dan L = 4096 (+36,1 dB) memberi margin
+besar yang masih tersisa walau jalur langsung lemah. Yang menjadi pengikat di
+sistem nyata karena itu bukan anggaran daya sensing melainkan **ke mana beam
+diarahkan**, yang pada B0 dibangun dari h_{d,t} sebenarnya (CSI sempurna) dan
+pada metode terapan dari estimasi tracker lewat RIS. B0 di set test
+mengukur selisih itu secara langsung.
+
+### Langkah C2 — B0 "No-RIS"
+
+`EnvConfig.no_ris` (default **mati**) menghapus kaskade RIS dari (E2) dan
+(E5): h_e = h_d, c = h_{d,t}, b = h^{(r)}_{d,t}. Dipasangkan dengan
+`perfect_csi=True`, B0 menjadi batas atas sistem tanpa RIS: RZF dari h_d
+sebenarnya dan w_s ∝ h_{d,t}^*/‖h_{d,t}‖. ρ dan bobot daya disapu di grid
+val, memakai kembali `baselines.geometric.weight_grid` ketimbang menambah
+kunci config baru — menambah kunci akan mengganti `config_hash` seluruh
+proyek demi tiga angka.
+
+Clutter **tidak** ikut dihapus: H_c adalah jalur langsung BS-tx → BS-rx dan
+tidak melewati RIS; menghapusnya akan memberi B0 keuntungan yang tidak ada
+hubungannya dengan RIS.
+
+`evaluate_decision` ikut mendapat argumen `no_ris`, supaya B0 bisa
+dibandingkan antara jalur env dan jalur snapshot seperti B2 dan B3 —
+`tests/test_b0_no_ris.py` menuntut kesamaan sampai rel = 1e-9, membuktikan
+h_e sama **persis** dengan h_d, dan membuktikan fasa RIS tidak berpengaruh
+sama sekali pada B0.

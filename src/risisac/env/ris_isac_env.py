@@ -119,6 +119,18 @@ class EnvConfig:
     #: tracker). Tracker tetap berjalan dan galatnya tetap dilaporkan, karena
     #: ia adalah akibat hilir dari deteksi — bukan masukan keputusan B3.
     perfect_csi: bool = False
+    #: Jalur B0 "No-RIS" (§6.2, ditambahkan Fase 8). Saat menyala, kaskade RIS
+    #: dihapus SELURUHNYA dari model: h_e = h_d (E2 tanpa suku kedua),
+    #: c = h_{d,t} dan b = h^{(r)}_{d,t} (E5 tanpa suku kedua). Dipasangkan
+    #: dengan ``perfect_csi=True``, ia menjadi batas atas sistem tanpa RIS
+    #: yang MURAH HATI: precoder RZF dari h_d sebenarnya dan beam sensing
+    #: w_s ~ conj(h_{d,t})/||h_{d,t}||, yaitu MRT pada kanal target yang
+    #: sebenarnya. Fasa RIS menjadi tidak berpengaruh sama sekali.
+    #:
+    #: Clutter **tidak** ikut dihapus: H_c adalah jalur langsung BS-tx ->
+    #: BS-rx dan tidak melewati RIS, jadi menghapusnya akan memberi B0
+    #: keuntungan yang tidak ada hubungannya dengan RIS.
+    no_ris: bool = False
 
     @classmethod
     def from_config(cls, cfg: dict, observation_mode: str | None = None) -> "EnvConfig":
@@ -299,6 +311,37 @@ class RisIsacEnv(gym.Env):
                          + 1j * self._rng.normal(size=h_true.shape))
         return h_true + noise
 
+    # ------------------------------------------------------ kanal (E2) / (E5)
+    def _effective_channel(self, hd_user: np.ndarray, g_user: np.ndarray,
+                           phi: np.ndarray) -> np.ndarray:
+        """h_e,k^T = h_d,k^T + g_k^T Theta G  (E2); hanya h_d bila ``no_ris``."""
+        if self.cfg.no_ris:
+            return np.array(hd_user, dtype=complex, copy=True)
+        return sm.effective_channel(hd_user, g_user, phi, self._G)
+
+    def _target_channels(self, hd_tgt_tx: np.ndarray, hd_tgt_rx: np.ndarray,
+                         g_tgt: np.ndarray, phi: np.ndarray):
+        """Kanal maju dan balik target (E5); hanya suku langsung bila ``no_ris``."""
+        if self.cfg.no_ris:
+            return (np.array(hd_tgt_tx, dtype=complex, copy=True),
+                    np.array(hd_tgt_rx, dtype=complex, copy=True))
+        return sm.sensing_channels(hd_tgt_tx, hd_tgt_rx, g_tgt, phi,
+                                   self._G, self._H)
+
+    def _sensing_estimate(self, hd_tgt_tx: np.ndarray,
+                          phi: np.ndarray) -> np.ndarray:
+        """c_hat yang dipakai membangun w_s (§5.3).
+
+        Tanpa RIS, ``estimated_sensing_channel`` tidak terdefinisi: ia membangun
+        c_hat HANYA dari jalur kaskade, yang pada B0 bernilai nol. Yang dipakai
+        adalah h_{d,t} sebenarnya, sehingga w_s ~ conj(h_{d,t})/||h_{d,t}||
+        (MRT) -- pilihan yang sengaja murah hati bagi B0.
+        """
+        if self.cfg.no_ris:
+            return np.asarray(hd_tgt_tx, dtype=complex)[0]
+        return pc.estimated_sensing_channel(self._estimated_target_channel(),
+                                            phi, self._G)
+
     def _estimated_target_channel(self) -> np.ndarray:
         """g_hat_t: model LoS gelombang sferis ke estimasi posisi tracker.
 
@@ -424,10 +467,10 @@ class RisIsacEnv(gym.Env):
                      velocity_std_mps=self.cfg.init_velocity_std_mps)
 
         # h_hat di bawah phi_prev: dibutuhkan o_0 (§5.2 "di bawah phi_{t-1}").
-        h_true = sm.effective_channel(
+        h_true = self._effective_channel(
             self._traj.user_hd[:, 0, :].astype(np.complex128),
             self._traj.user_g[:, 0, :].astype(np.complex128),
-            self._phi_prev, self._G)
+            self._phi_prev)
         self._h_hat = self._estimate_channel(h_true)
         return self._observation(), {"trajectory_index": self._traj_index}
 
@@ -449,16 +492,15 @@ class RisIsacEnv(gym.Env):
         g_t = self._traj.target_g[:, t, :].astype(np.complex128)
 
         # (§5.1 butir 2-3) BS mengestimasi kanal di bawah phi_t lalu precoding.
-        h_true = sm.effective_channel(hd_u, g_u, phi, self._G)
+        h_true = self._effective_channel(hd_u, g_u, phi)
         h_hat = self._estimate_channel(h_true)
         Wc = pc.communication_precoder(h_hat, weights, self._p_max, rho,
                                        self._alpha)
-        c_hat = pc.estimated_sensing_channel(self._estimated_target_channel(),
-                                             phi, self._G)
+        c_hat = self._sensing_estimate(hd_tx, phi)
         ws = pc.sensing_beam(c_hat, self._p_max, rho)
 
         # (§5.1 butir 4) reward dari kanal SEBENARNYA, bukan dari estimasi.
-        c, b = sm.sensing_channels(hd_tx, hd_rx, g_t, phi, self._G, self._H)
+        c, b = self._target_channels(hd_tx, hd_rx, g_t, phi)
         sinr = sm.sinr(h_true, Wc, ws, cfg.noise_power_watt, cfg.beta_s)
         rates = sm.rate(sinr)
         scnr = sm.scnr(c, b, Wc, ws, self._Hc, cfg.eta, cfg.noise_power_watt,

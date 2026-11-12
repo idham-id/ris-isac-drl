@@ -255,3 +255,44 @@ Dua hipotesis diuji berdampingan, masing-masing 3 seed A1, tanpa menyentuh `conf
 **Hipotesis yang tersisa (belum diuji, butuh persetujuan karena menyentuh reward):** hinge λ[Γ−SCNR]₊/10 bernilai **nol** begitu kendala terpenuhi, sehingga setelah kebijakan mencapai pemenuhan tinggi, gradien yang MEMPERTAHANKAN SCNR ikut hilang dan kebijakan hanyut didorong suku laju sampai pemenuhannya pecah. Itu cocok dengan gejalanya: laju tidak berubah sedikit pun selama ambruk, hanya deteksi yang jatuh. Menguji ini berarti mengubah (E9), jadi tidak dilakukan tanpa persetujuan.
 
 **Akibatnya untuk paper:** A1 tetap dilaporkan pada checkpoint terbaik di val, dengan kurva pelatihannya ditampilkan apa adanya di F4 dan ketidakstabilannya dinyatakan terbuka sebagai keterbatasan — yaitu opsi 3 di laporan keputusan, bukan opsi 2.
+
+---
+
+## Fase 8 — Persiapan naskah paper (disetujui 2026-11-12)
+
+Pembingkaian ulang hasil Fase 5–7 menjadi bentuk yang bisa ditulis sebagai
+paper. **Tidak ada fisika, reward (E9), λ, κ bawaan, geometri, basis data
+kanal, atau hiperparameter PPO yang berubah**; `configs/base.yaml` tidak
+disentuh, sehingga 21 run Fase 5 tetap sah.
+
+**Langkah A — GPU, sebelum pelatihan.**
+- [x] `scripts/run_e1_coverage.py`: hitung ulang E1 pada geometri final dan
+      config sekarang, dan tambahkan **SCNR ideal sistem-lawan-sistem**
+      (MRT masing-masing, ρ = 1) untuk jalur langsung saja dan lewat RIS.
+
+**Langkah B — CPU, pelatihan di latar belakang (JOBS=3).**
+- [x] `ppo_full_absolute` (A1-FullCSI) ditambahkan ke `METHODS`.
+- [x] `scripts/run_phase8_training.sh`: 9 run — A1-FullCSI × 3 seed pada base,
+      A1 × 3 seed pada Γ = 10 dan 16 dB, semuanya 1e6 langkah lewat `--steps`
+      (config Γ tidak diubah).
+
+**Langkah C — sambil pelatihan berjalan.**
+- [x] Pembingkaian ulang `docs/EXPERIMENT_DESIGN.md` §0, §1 (+§1.1), §5.3,
+      §6.1, §6.2, §7, §9, §11. Kunci metode dan nama direktori hasil tidak
+      ikut berubah.
+- [x] §5.3: justifikasi fisik fasa absolut per frame, dengan angka waktu
+      penyetelan ditandai `[RUJUKAN PERLU DIVERIFIKASI]`.
+- [x] §1.1 "Hasil terhadap hipotesis" — apa adanya, termasuk yang meleset.
+- [x] Baseline **B0 No-RIS** (`EnvConfig.no_ris`, `NoRisEnvPolicy`,
+      `evaluate_decision(no_ris=True)`) + `tests/test_b0_no_ris.py`.
+- [x] F2 baru (dua panel), F2b diserap.
+
+**Langkah D — setelah pelatihan selesai.**
+- [ ] Evaluasi set test: A1-FullCSI, A1 pada Γ = 10/16, dan B0 pada ketiga Γ.
+- [ ] T2, T3a, F4, F5, F7, F8 diperbarui.
+- [ ] `make_figures.py`, `check_equations.py`, `pytest`, Gate 6, Gate 7.
+
+**Gate 8:** semua tes lulus termasuk tes B0; 9 run baru selesai dengan
+`done.json` dan checkpoint terbaik di val; T2 memuat B0 dan A1-FullCSI
+beserta CI; F2 baru dan F4/F5/F7/F8 diperbarui; `manifest.json` mencatat asal
+semua artefak.

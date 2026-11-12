@@ -36,8 +36,14 @@ validasi E0 memakai model analitik.
 python scripts/run_e1_coverage.py --config base
 ```
 
-Menghasilkan **F1** (tata letak) dan **F2** (peta cakupan dan SNR radar), serta
+Menghasilkan **F1** (tata letak) dan **F2** (dua panel: penguatan RIS
+komunikasi MRT-lawan-MRT, dan SNR radar ideal lewat RIS berkontur Γ), serta
 `gate1.json`. Gate 1 menuntut kaskade lewat RIS mengalahkan jalur langsung.
+
+Terukur pada geometri final: penguatan RIS komunikasi median **+12,0 dB**
+(93,2% ROI ≥ 6 dB). SCNR ideal lewat RIS memenuhi Γ di 100% ROI; **tanpa RIS
+di 64,5%** — jalur sensing jauh lebih tidak bergantung pada RIS daripada
+jalur komunikasi, karena η dan L = 4096 menyisakan margin besar.
 
 ### 2. Basis data kanal dan validasi (Gate 2) — ±9 menit, GPU
 
@@ -63,15 +69,20 @@ python scripts/run_gate3_feasibility.py --config base
 python scripts/run_gate4_smoke.py --config base
 ```
 
-### 5. Pelatihan (Gate 5) — ±92 menit, CPU
+### 5. Pelatihan (Gate 5 dan Gate 8) — ±92 + ±45 menit, CPU
 
 ```bash
-JOBS=3 bash scripts/run_all_training.sh          # 21 run, bisa dilanjutkan
+JOBS=3 bash scripts/run_all_training.sh          # 21 run Fase 5
+JOBS=3 bash scripts/run_phase8_training.sh       # 9 run Fase 8
 python scripts/run_gate5_check.py --config base  # F4
 for c in gamma10 gamma16 kappa025 kappa050; do
     python scripts/run_gate5_check.py --config "$c" --methods ppo_po
 done
 ```
+
+Antrean Fase 8 menambah **A1-FullCSI** (ablasi observasi pada metode utama)
+dan **A1 pada Γ = 10 dan 16 dB**, masing-masing 3 seed × 1e6 langkah. Kedua
+antrean bisa dilanjutkan dan saling bebas.
 
 **Paralelisme terukur:** JOBS=1 → 2.069 langkah/detik; JOBS=3 → 5.112 agregat;
 **JOBS=4 gagal** (36 proses × torch melewati batas memori commit Windows) dan
@@ -105,8 +116,9 @@ python scripts/run_gate7_check.py               # ketiganya sekaligus
 
 `make_figures.py` **tidak menghitung ulang apa pun**: ia membaca file hasil,
 menggambar ulang, dan menulis ke `results/paper/<config_hash>/` beserta
-`manifest.json` yang mencatat asal tiap artefak. Tujuh dari sembilan PDF murni
-vektor; F2 dan F2b memuat raster karena keduanya peta panas.
+`manifest.json` yang mencatat asal tiap artefak. **Delapan** gambar sejak
+Fase 8 (F2b diserap ke dalam F2 yang baru); tujuh PDF murni vektor, F2
+memuat raster karena kedua panelnya peta panas.
 
 ## Perintah harian
 
@@ -114,7 +126,7 @@ vektor; F2 dan F2b memuat raster karena keduanya peta panas.
 |---|---|
 | Tes | `pytest -q` |
 | Link budget kasar | `python scripts/link_budget.py --m 64 --d-bs-ris 20 --L 4096` |
-| Satu run pelatihan | `python -m risisac.train.train --config base --method ppo_po --seed 0` |
+| Satu run pelatihan (metode utama) | `python -m risisac.train.train --config base --method ppo_po_absolute --seed 0` |
 | Tabel parameter LaTeX | `python scripts/print_param_table.py --config base` |
 
 ## Catatan reproduksibilitas

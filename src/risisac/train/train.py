@@ -5,11 +5,16 @@
 Tiga metode hanya berbeda pada dua tombol, dan keduanya ditangani di sini
 supaya satu file config tetap melayani ketiganya:
 
-| ID | ``--method``       | observasi | fasa        |
-|----|--------------------|-----------|-------------|
-| M1 | ``ppo_po``         | parsial   | inkremental |
-| M2 | ``ppo_full``       | penuh     | inkremental |
-| A1 | ``ppo_po_absolute``| parsial   | absolut     |
+| ID          | ``--method``          | observasi | fasa        |
+|-------------|-----------------------|-----------|-------------|
+| A1 (utama)  | ``ppo_po_absolute``   | parsial   | absolut     |
+| A1-FullCSI  | ``ppo_full_absolute`` | penuh     | absolut     |
+| M1 (ablasi) | ``ppo_po``            | parsial   | inkremental |
+| M2 (ablasi) | ``ppo_full``          | penuh     | inkremental |
+
+Kunci ``--method`` dan nama direktori hasil **tidak diubah** saat A1 menjadi
+metode utama di Fase 8: provenans tiap run harus tetap bisa ditelusuri ke
+antrean yang menghasilkannya. Yang berpindah hanya peran dan urutan tampilan.
 
 Metode TIDAK diubah lewat dict config, melainkan lewat ``env_overrides``
 (lihat ``env.vec.make_env_fn``). Alasannya praktis: kalau metode mengubah
@@ -62,6 +67,13 @@ METHODS: dict[str, dict] = {
                  "env_overrides": {"phase_update": "incremental"}},
     "ppo_po_absolute": {"paper_id": "A1", "observation_mode": "partial",
                         "env_overrides": {"phase_update": "absolute"}},
+    # Ablasi OBSERVASI pada metode utama (Fase 8): A1 dengan observasi penuh.
+    # Tanpa baris ini, "apakah observasi parsial merugikan" hanya bisa dijawab
+    # dari pasangan M1/M2, yaitu pada parameterisasi fasa yang justru menjadi
+    # kendala pengikatnya -- jawabannya akan tercampur dua sebab.
+    "ppo_full_absolute": {"paper_id": "A1-FullCSI",
+                          "observation_mode": "full",
+                          "env_overrides": {"phase_update": "absolute"}},
 }
 
 

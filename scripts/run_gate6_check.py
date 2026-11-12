@@ -29,6 +29,17 @@ from risisac.eval.plots import (plot_f5_rate_cdf,             # noqa: E402
 #: Config yang menyusun F8, beserta Gamma-nya.
 GAMMA_CONFIGS = (("gamma10", 10.0), ("base", 13.0), ("gamma16", 16.0))
 
+#: Metode yang digambar F8. Sengaja dibatasi, dengan dua alasan.
+#:
+#: 1. Hanya metode yang dilatih ulang di KETIGA nilai Gamma boleh menjadi
+#:    garis pada sapuan Gamma. A1-FullCSI dan M2 hanya ada di Gamma = 13 dB,
+#:    jadi keduanya akan muncul sebagai satu titik yang tampak seperti ujung
+#:    garis yang terpotong.
+#: 2. Sepuluh garis di satu gambar trade-off tidak terbaca. Yang disisakan
+#:    adalah lantai (B0, tanpa RIS), baseline terapan (B2), langit-langit
+#:    (B3 oracle), metode utama (A1), dan ablasinya (M1).
+F8_METHODS = ("B0", "B2", "B3", "A1", "M1")
+
 
 def eval_dir(config: str) -> tuple[Path, dict]:
     cfg = load_config(config)
@@ -58,12 +69,14 @@ def pick_episode(steps, episodes) -> int:
     return int(lengths.idxmax())
 
 
-def f8_points(configs=GAMMA_CONFIGS) -> list[dict]:
+def f8_points(configs=GAMMA_CONFIGS, methods=F8_METHODS) -> list[dict]:
     """Titik F8: satu per (metode, Gamma), plus titik per seed untuk agen."""
     points = []
     for config, gamma in configs:
         _, episodes, _, _ = load_eval(config)
         for method, g in episodes.groupby("method"):
+            if method not in methods:
+                continue
             per_seed = [(float(s["scnr_compliance"].mean()),
                          float(s["min_rate"].mean()))
                         for _, s in g.groupby("train_seed")]
@@ -116,10 +129,11 @@ def main() -> int:
     print("\nUji beda utama (§9; Welch atas rata-rata per seed, n = 3)")
     for column in ("reward_per_step", "min_rate", "scnr_compliance"):
         means = seed_means(episodes, column)
-        for other in ("B2", "B4-D5"):
-            if "M1" in means and other in means:
-                r = welch_ttest(means["M1"], means[other])
-                print(f"   {column:<16s} M1 vs {other:<7s} "
+        for main, other in (("A1", "B0"), ("A1", "B2"), ("A1", "B4-D5"),
+                            ("A1", "A1-FullCSI"), ("M1", "B2")):
+            if main in means and other in means:
+                r = welch_ttest(means[main], means[other])
+                print(f"   {column:<16s} {main:<11s} vs {other:<11s} "
                       f"selisih {r['diff']:+7.3f}  p {r['p']:.4f}")
 
     # ----------------------------------------------------------------- gate 6

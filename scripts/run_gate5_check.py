@@ -258,6 +258,23 @@ def main() -> int:
               f"m1_beats_b2: {m1:+.3f} lawan {baselines['B2'][METRIC]:+.3f}")
         print(f"  [info] seed konvergen semua: {checks['all_seeds_converged']}; "
               f"seed mengalahkan B2 semua: {checks['all_seeds_beat_b2']}")
+        # Gate 5 TETAP digate pada M1 (Fase 5), walau A1 menjadi metode utama
+        # di Fase 8: ambang dan hasilnya sudah tercatat pada besaran itu, dan
+        # menukar metode yang digate akan membuat riwayat gate tidak bisa
+        # dibaca. Yang berubah hanya bahwa kestabilan metode utama ikut
+        # DICETAK di sini, bukan hanya tersimpan di gate5.json -- A1 ambruk
+        # setelah puncaknya dan itu tidak boleh tersembunyi di balik gate yang
+        # menilai metode lain.
+        for paper_id in ("A1", "A1-FullCSI"):
+            info = methods_out.get(paper_id)
+            if info is None:
+                continue
+            conv_main = info["mean_convergence"]
+            print(f"  [info] {paper_id} (metode utama Fase 8, TIDAK digate): "
+                  f"ekor {100 * conv_main['tail_ratio']:+.2f}% dari kenaikan "
+                  f"total, konvergen={conv_main['converged']}, "
+                  f"reward val {info['mean_final'][METRIC]:+.3f} "
+                  f"(std antar-seed {info['std_final_reward']:.3f})")
         passed = all([checks["m1_converged"], checks["m1_beats_b1"],
                       checks["m1_beats_b2"]])
         print(f"\nGATE 5: {'LOLOS' if passed else 'GAGAL'}")

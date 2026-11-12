@@ -135,12 +135,17 @@ T2_FIELDS = ((("reward_per_step"), "Reward/langkah", 3, True),
              ("track_duration_s", "Durasi track (s)", 2, False),
              ("tracker_error_m", "Galat tracker (m)", 2, False))
 
-#: Nama metode di paper.
-METHOD_LABELS = {"B1": "B1 Random", "B2": "B2 Geometric",
+#: Nama metode di paper. Kunci-kunci ini SAMA dengan kunci di file hasil dan
+#: nama direktori run; yang berubah di Fase 8 hanya teks tampilannya, supaya
+#: pembaca tabel langsung melihat mana metode utama dan mana ablasi.
+METHOD_LABELS = {"B0": "B0 No-RIS",
+                 "B1": "B1 Random", "B2": "B2 Geometric",
                  "B3": "B3 Oracle-GD", "B4-D5": "B4 Oracle-GD-stale(5)",
                  "B4-D10": "B4 Oracle-GD-stale(10)",
-                 "M1": "M1 PPO-PO", "M2": "M2 PPO-FullCSI",
-                 "A1": "A1 PPO-PO-absolute"}
+                 "A1": "A1 PPO-PO-absolute (utama)",
+                 "A1-FullCSI": "A1-FullCSI PPO-absolute, CSI penuh",
+                 "M1": "M1 PPO-PO (ablasi fasa inkremental)",
+                 "M2": "M2 PPO-FullCSI (ablasi fasa inkremental)"}
 
 
 def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
@@ -164,26 +169,45 @@ def t2_main_results(t2, gamma_db: float, p_max_dbm: float,
         label="tab:t2-main-results", align="l" + "r" * (len(header) - 1),
         notes=("Kurung siku: interval kepercayaan 95\\% bootstrap atas "
                "episode, dikelompokkan per seed. Agen dilaporkan pada "
-               "checkpoint terbaik di val. B3/B4 memakai CSI dan posisi "
-               "sempurna: acuan atas, bukan metode terapan."))
+               "checkpoint terbaik di val. B0 menghapus kaskade RIS "
+               "seluruhnya dan memakai CSI langsung sempurna: ia lantai "
+               "sistem tanpa RIS, bukan sistem tanpa RIS yang realistis. "
+               "B3/B4 memakai CSI dan posisi sempurna: acuan atas, bukan "
+               "metode terapan."))
 
 
 # ---------------------------------------------------------------- T3 (E5+E6)
 def t3_ablation(e5) -> str:
-    """T3a -- ablasi parameterisasi fasa pada set test (E5)."""
+    """T3a -- ablasi parameterisasi fasa DAN observasi pada set test (E5).
+
+    Dua ablasi dalam satu tabel karena keduanya menjawab pertanyaan yang sama
+    bentuknya: berapa harga satu pilihan desain, diukur pada metode utama.
+    Baris A1 lawan A1-FullCSI mengisolasi **observasi** (keduanya fasa
+    absolut); baris A1 lawan M1/M2 beserta sapuan kappa mengisolasi
+    **parameterisasi fasa**.
+    """
     rows = [[row["varian"], f"{int(row['episode'])}",
              number(row["reward_per_step"], 3, True),
              number(row["min_rate"], 2),
              number(row["scnr_compliance"], 3)]
             for _, row in e5.iterrows()]
+    note = ("Seluruh baris memakai $\\lambda$, geometri, dan anggaran "
+            "langkah yang sama; yang berbeda hanya parameterisasi fasa, "
+            "$\\kappa$, atau mode observasi. ")
+    by_method = {str(r["metode"]): r for _, r in e5.iterrows()
+                 if "metode" in e5.columns}
+    if {"A1", "A1-FullCSI"} <= set(by_method):
+        delta = (float(by_method["A1-FullCSI"]["reward_per_step"])
+                 - float(by_method["A1"]["reward_per_step"]))
+        note += (f"Harga observasi parsial pada metode utama: "
+                 f"{number(delta, 3, True)} reward per langkah "
+                 "(A1-FullCSI dikurangi A1).")
     return latex_table(
         ["Varian", "Episode", "Reward/langkah", "Rate min.",
          "Pemenuhan SCNR"], rows,
-        caption="T3a -- ablasi parameterisasi fasa pada set test (E5).",
-        label="tab:t3-ablation",
-        notes=("Seluruh baris memakai $\\lambda$, geometri, dan anggaran "
-               "langkah yang sama; yang berbeda hanya parameterisasi fasa "
-               "dan $\\kappa$."))
+        caption=("T3a -- ablasi parameterisasi fasa dan observasi pada set "
+                 "test (E5)."),
+        label="tab:t3-ablation", notes=note)
 
 
 def t3_cost(cost: dict) -> str:
@@ -208,10 +232,12 @@ def t3_cost(cost: dict) -> str:
                      f"{b3['device'].upper()}, {b3['batch_steps']} langkah "
                      f"dibatch sekaligus"])
     note = "Waktu satu keputusan, diukur di mesin yang sama. "
-    speedup = cost.get("m1_vs_b3_online_speedup")
-    if speedup:
-        note += (f"M1 {int(round(speedup)):,}$\\times$ lebih cepat daripada "
-                 "B3 daring. ".replace(",", "."))
+    for paper_id, key in (("A1", "a1_vs_b3_online_speedup"),
+                          ("M1", "m1_vs_b3_online_speedup")):
+        speedup = cost.get(key)
+        if speedup:
+            note += (f"{paper_id} {int(round(speedup)):,}".replace(",", ".")
+                     + "$\\times$ lebih cepat daripada B3 daring. ")
     note += ("Angka teramortisasi hanya berlaku bagi acuan offline yang "
              "seluruh langkahnya dioptimalkan sekaligus, bukan bagi "
              "pengendali.")

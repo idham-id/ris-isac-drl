@@ -33,12 +33,13 @@ sys.path.insert(0, str(REPO / "src"))
 from risisac.channels.database import database_path            # noqa: E402
 from risisac.config import (channel_config_hash, config_hash,  # noqa: E402
                             git_commit, load_config)
-from risisac.env import EnvConfig, RisIsacEnv, TrajectoryStore  # noqa: E402
-from risisac.eval.evaluate import run_agents, run_baselines     # noqa: E402
+from risisac.env import EnvConfig, TrajectoryStore              # noqa: E402
+from risisac.eval.evaluate import (run_agents, run_baselines,   # noqa: E402
+                                   tune_baselines)
 from risisac.eval.metrics import cluster_bootstrap              # noqa: E402
 from risisac.eval.plots import plot_f7_pmax_speed               # noqa: E402
-from risisac.baselines.env_policy import tune_baseline          # noqa: E402
 from risisac.system import signal_model as sm                   # noqa: E402
+from risisac.train import METHODS                               # noqa: E402
 
 #: Metrik yang digambar F7, dan apakah ia butuh ambang.
 PANEL_METRICS = (("min_rate", "rate minimum (bit/s/Hz)"),
@@ -78,7 +79,10 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default="base")
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--methods", nargs="+", default=["M1", "M2", "A1", "B2"])
+    # B0 ditambahkan di Fase 8: F7 tanpa lantai tanpa-RIS tidak menunjukkan
+    # berapa dari kinerja pada tiap P_max yang benar-benar datang dari RIS.
+    ap.add_argument("--methods", nargs="+",
+                    default=["B0", "B2", "A1", "M1", "M2"])
     args = ap.parse_args()
 
     cfg = load_config(args.config)
@@ -98,14 +102,14 @@ def main() -> int:
     sigma_max = float(cfg["observation"]["target_pos_max_std_m"])
     gamma = float(cfg["sensing"]["scnr_threshold_db"])
 
-    # ---------------------------------------------------- B1/B2 disetel di val
-    plain = dataclasses.replace(env_cfg, phase_update="absolute")
-    val_store = TrajectoryStore(db, "val")
-    val_env = RisIsacEnv(val_store, plain, train=False, seed=args.seed + 1000)
-    tuned = {n: tune_baseline(n, val_env, cfg, plain,
-                              list(range(len(val_store))),
-                              args.seed + 1000)["best"] for n in ("b1", "b2")}
-    print(f"B1/B2 dari grid val: {tuned}")
+    # ------------------------------------------------- B0/B1/B2 disetel di val
+    tuned = tune_baselines(cfg, db, env_cfg, args.seed, verbose=False)
+    print(f"Baseline dari grid val: {tuned}")
+
+    # Hanya metode yang benar-benar digambar yang dirollout: ``run_agents``
+    # kalau tidak akan menjalankan SETIAP metode terdaftar di tiap nilai
+    # P_max, termasuk yang lalu dibuang oleh filter --methods.
+    wanted = {k: v for k, v in METHODS.items() if v["paper_id"] in args.methods}
 
     # ------------------------------------------------------------ sapuan P_max
     p_max_list = [float(v) for v in cfg["evaluation"]["p_max_eval_dbm"]]
@@ -120,7 +124,7 @@ def main() -> int:
         step_rows, _ = run_baselines(cfg, db, swept, indices, seeds, tuned,
                                      verbose=False, include_oracle=False)
         step_rows += run_agents(cfg, db, indices, seeds, train_seeds,
-                                verbose=False,
+                                verbose=False, methods=wanted,
                                 extra_overrides={"p_max_eval_watt": watt})
         frame = pd.DataFrame(step_rows)
         frame["p_max_dbm"] = p_dbm

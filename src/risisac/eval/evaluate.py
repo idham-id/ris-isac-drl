@@ -46,8 +46,15 @@ from ..env.vec import make_vec_env
 from ..train import METHODS, run_dir
 from .rollout import STEP_FIELDS, rollout_agent, rollout_baseline
 
-#: Urutan metode di tabel dan gambar paper.
-METHOD_ORDER = ("B1", "B2", "B3", "B4-D5", "B4-D10", "M1", "M2", "A1")
+#: Urutan metode di tabel dan gambar paper (Fase 8). A1 adalah metode utama;
+#: M1 dan M2 turun menjadi ablasi parameterisasi fasa dan dicetak terakhir.
+#: Kunci metode dan nama direktori hasil TIDAK ikut berubah -- yang berpindah
+#: hanya peran dan urutan tampilan, supaya provenans tiap run tetap utuh.
+METHOD_ORDER = ("B0", "B1", "B2", "B3", "B4-D5", "B4-D10",
+                "A1", "A1-FullCSI", "M1", "M2")
+
+#: Baseline yang disetel di val lalu dibekukan untuk test.
+TUNED_BASELINES = ("b0", "b1", "b2")
 
 
 def noise_seeds(cfg: dict, base_seed: int) -> list[int]:
@@ -77,6 +84,42 @@ def episode_rows(episodes: list[dict], method: str, train_seed: int,
 
 
 # --------------------------------------------------------------- baseline
+def baseline_env_configs(env_cfg: EnvConfig) -> dict:
+    """Varian ``EnvConfig`` yang dipakai tiap keluarga baseline (§6.2).
+
+    * ``plain``  -- B1/B2: hanya ``phase_update='absolute'``, informasi sama
+      dengan agen.
+    * ``b0``     -- tambahan ``no_ris`` dan ``perfect_csi``: sistem tanpa RIS
+      dengan CSI langsung sempurna.
+    * ``oracle`` -- tambahan ``perfect_csi``: B3/B4.
+
+    Dikumpulkan di satu tempat supaya penyetelan di val dan evaluasi di test
+    tidak bisa memakai varian env yang berbeda -- kesalahan yang hasilnya
+    terlihat masuk akal dan karena itu tidak akan ketahuan.
+    """
+    plain = dataclasses.replace(env_cfg, phase_update="absolute")
+    return {"plain": plain,
+            "b0": dataclasses.replace(plain, no_ris=True, perfect_csi=True),
+            "oracle": dataclasses.replace(plain, perfect_csi=True)}
+
+
+def tune_baselines(cfg: dict, db: Path, env_cfg: EnvConfig, seed: int,
+                   names=TUNED_BASELINES, verbose: bool = True) -> dict:
+    """Sapu grid val untuk tiap baseline, lalu bekukan hasilnya untuk test."""
+    variants = baseline_env_configs(env_cfg)
+    val_store = TrajectoryStore(db, "val")
+    val_indices = list(range(len(val_store)))
+    tuned = {}
+    for name in names:
+        variant = variants["b0"] if name == "b0" else variants["plain"]
+        env = RisIsacEnv(val_store, variant, train=False, seed=seed + 1000)
+        res = tune_baseline(name, env, cfg, variant, val_indices, seed + 1000)
+        tuned[name] = res["best"]
+        if verbose:
+            print(f"   {name.upper()}: {res['best']}")
+    return tuned
+
+
 def run_baselines(cfg: dict, db: Path, env_cfg: EnvConfig, indices,
                   seeds: list[int], tuned: dict, verbose: bool = True,
                   include_oracle: bool = True) -> list:
@@ -88,18 +131,25 @@ def run_baselines(cfg: dict, db: Path, env_cfg: EnvConfig, indices,
         tiap P_max.
     """
     store = TrajectoryStore(db, "test")
-    plain = dataclasses.replace(env_cfg, phase_update="absolute")
-    oracle_cfg = dataclasses.replace(plain, perfect_csi=True)
+    variants = baseline_env_configs(env_cfg)
+    plain, b0_cfg, oracle_cfg = (variants["plain"], variants["b0"],
+                                 variants["oracle"])
+
+    def run_plain(rows: list, noise_seed: int) -> list:
+        """B0, B1, B2 pada satu seed derau. B0 memakai varian env-nya sendiri."""
+        for name in [n for n in TUNED_BASELINES if n in tuned]:
+            variant = b0_cfg if name == "b0" else plain
+            env = RisIsacEnv(store, variant, train=False, seed=noise_seed)
+            policy = make_baseline(name, cfg, variant, seed=noise_seed,
+                                   **tuned[name])
+            eps = rollout_baseline(env, policy, indices, noise_seed)
+            rows += episode_rows(eps, name.upper(), noise_seed, noise_seed)
+        return rows
 
     if not include_oracle:
         rows = []
         for noise_seed in seeds:
-            env = RisIsacEnv(store, plain, train=False, seed=noise_seed)
-            for name in ("b1", "b2"):
-                policy = make_baseline(name, cfg, plain, seed=noise_seed,
-                                       **tuned[name])
-                eps = rollout_baseline(env, policy, indices, noise_seed)
-                rows += episode_rows(eps, name.upper(), noise_seed, noise_seed)
+            run_plain(rows, noise_seed)
         return rows, None
 
     t0 = time.time()
@@ -114,13 +164,7 @@ def run_baselines(cfg: dict, db: Path, env_cfg: EnvConfig, indices,
     periods = [int(d) for d in cfg["baselines"]["stale_period_steps"]]
     rows = []
     for noise_seed in seeds:
-        env = RisIsacEnv(store, plain, train=False, seed=noise_seed)
-        for name in ("b1", "b2"):
-            policy = make_baseline(name, cfg, plain, seed=noise_seed,
-                                   **tuned[name])
-            eps = rollout_baseline(env, policy, indices, noise_seed)
-            rows += episode_rows(eps, name.upper(), noise_seed, noise_seed)
-
+        run_plain(rows, noise_seed)
         env_oracle = RisIsacEnv(store, oracle_cfg, train=False, seed=noise_seed)
         for period in [1] + periods:
             policy = OracleEnvPolicy(oracle["decisions"], period)
@@ -209,20 +253,9 @@ def main(argv=None) -> int:
     print(f"set test    : {len(indices)} lintasan | seed derau {seeds}")
     print(f"P_max eval  : {cfg['radio']['p_max_dbm']} dBm")
 
-    # ---- penyetelan B1/B2 di VAL, lalu dibekukan (§6.2)
-    print("\nSetel B1/B2 di val (set test tidak disentuh)")
-    val_env = RisIsacEnv(TrajectoryStore(db, "val"),
-                         dataclasses.replace(env_cfg, phase_update="absolute"),
-                         train=False, seed=args.seed + 1000)
-    val_indices = list(range(len(TrajectoryStore(db, "val"))))
-    tuned = {}
-    for name in ("b1", "b2"):
-        res = tune_baseline(name, val_env, cfg,
-                            dataclasses.replace(env_cfg,
-                                                phase_update="absolute"),
-                            val_indices, args.seed + 1000)
-        tuned[name] = res["best"]
-        print(f"   {name.upper()}: {res['best']}")
+    # ---- penyetelan B0/B1/B2 di VAL, lalu dibekukan (§6.2)
+    print("\nSetel B0/B1/B2 di val (set test tidak disentuh)")
+    tuned = tune_baselines(cfg, db, env_cfg, args.seed)
 
     print("\nBaseline di test")
     rows, oracle = run_baselines(cfg, db, env_cfg, indices, seeds, tuned)
@@ -244,14 +277,19 @@ def main(argv=None) -> int:
     t2 = t2.loc[order]
     t2.to_csv(out_dir / "T2.csv")
 
-    # ---- uji beda utama (§9): M1 vs B2 dan M1 vs B4
+    # ---- uji beda (§9). Pembandingnya mengikuti peran Fase 8: A1 adalah
+    # metode utama, jadi ia diuji terhadap lantai tanpa RIS (B0), terhadap
+    # baseline terapan (B2), terhadap oracle usang (B4), dan terhadap dirinya
+    # sendiri ber-CSI-penuh (A1-FullCSI, ablasi observasi). M1 tetap diuji
+    # supaya angka Fase 6 masih bisa dibandingkan baris per baris.
     tests = {}
     for column in ("reward_per_step", "min_rate", "scnr_compliance"):
         means = seed_means(episodes, column)
-        for other in ("B2", "B4-D5", "B4-D10"):
-            if "M1" in means and other in means:
-                tests[f"{column}|M1_vs_{other}"] = welch_ttest(means["M1"],
-                                                               means[other])
+        for main in ("A1", "M1"):
+            for other in ("B0", "B2", "B4-D5", "B4-D10", "A1-FullCSI"):
+                if main in means and other in means and main != other:
+                    tests[f"{column}|{main}_vs_{other}"] = welch_ttest(
+                        means[main], means[other])
     meta = {
         "config": args.config, "config_hash": chash,
         "channel_config_hash": channel_config_hash(cfg),

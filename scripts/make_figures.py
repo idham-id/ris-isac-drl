@@ -39,11 +39,10 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "src"))
 
 from risisac.config import (channel_config_hash, config_hash,     # noqa: E402
-                            git_commit, load_config,
-                            noise_power_watt)
+                            git_commit, load_config)
 from risisac.eval import tables                                   # noqa: E402
 from risisac.eval.plots import (plot_f1_layout, plot_f2_coverage,  # noqa: E402
-                                plot_f2_radar, plot_f3_e0,
+                                plot_f3_e0,
                                 plot_f4_training, plot_f5_rate_cdf,
                                 plot_f6_episode, plot_f7_pmax_speed,
                                 plot_f8_tradeoff)
@@ -171,20 +170,24 @@ def main() -> int:
             made += both(out_dir, "F1_layout", lambda p: plot_f1_layout(
                 spec, place, p, los_ris_fraction=share))
         if "F2" not in skip:
-            from risisac.system.signal_model import dbm_to_watt, to_db
-            sigma2 = noise_power_watt(cfg)
             p_values = list(data["p_max_dbm_values"])
             which = p_values.index(p_max) if p_max in p_values else 0
-            watt = dbm_to_watt(p_values[which])
-            snr = lambda gain: to_db(gain * watt / sigma2)  # noqa: E731
             m_elements = int(data["G"].shape[0])
             p_dbm = float(p_values[which])
+            missing = [k for k in ("ris_gain_db", "scnr_ris_mrt_db",
+                                   "scnr_direct_mrt_db") if k not in data]
+            if missing:
+                raise SystemExit(
+                    f"[!] {e1_dir}/e1_coverage.npz tidak memuat "
+                    f"{', '.join(missing)}. Itu hasil E1 sebelum Fase 8; "
+                    "jalankan ulang scripts/run_e1_coverage.py.")
             made += both(out_dir, "F2_coverage", lambda p: plot_f2_coverage(
-                grid[:, :2], snr(data["gain_direct"]), snr(data["gain_ris"]),
-                p, m_elements=m_elements, p_max_dbm=p_dbm, threshold_db=10.0))
-            made += both(out_dir, "F2b_radar", lambda p: plot_f2_radar(
-                grid[:, :2], data["scnr_db"][which], p, threshold_db=gamma,
-                p_max_dbm=p_dbm, m_elements=m_elements))
+                grid[:, :2], data["ris_gain_db"],
+                data["scnr_ris_mrt_db"][which],
+                data["scnr_direct_mrt_db"][which], p,
+                m_elements=m_elements, p_max_dbm=p_dbm,
+                gain_threshold_db=float(cfg["gate1"]["ris_gain_threshold_db"]),
+                gamma_db=gamma))
 
     # ------------------------------------------------------------- F3, T1 (E0)
     if "F3" not in skip or "T1" not in skip:

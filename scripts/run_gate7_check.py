@@ -31,7 +31,10 @@ sys.path.insert(0, str(REPO / "src"))
 from risisac.config import config_hash, git_commit, load_config  # noqa: E402
 
 #: Artefak yang dituntut §11 (gambar) dan Fase 7 (tabel LaTeX).
-EXPECTED_FIGURES = ("F1_layout", "F2_coverage", "F2b_radar", "F3_e0",
+#: F2b dihapus di Fase 8: peta radar terpisah menjadi mubazir setelah F2
+#: diganti menjadi dua panel (penguatan komunikasi, SNR radar berkontur
+#: Gamma). Delapan artefak gambar, bukan sembilan.
+EXPECTED_FIGURES = ("F1_layout", "F2_coverage", "F3_e0",
                     "F4_training", "F5_rate_cdf", "F6_episode",
                     "F7_pmax_speed", "F8_tradeoff")
 EXPECTED_TABLES = ("T1_channel_validation.tex", "T2_main_results.tex",

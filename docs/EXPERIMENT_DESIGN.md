@@ -2,7 +2,19 @@
 
 **Judul kerja:** *Deep Reinforcement Learning for RIS-Assisted Integrated Sensing and Communication in Site-Specific NLoS Scenarios with Partial Observations and Moving Targets*
 
-**Versi:** 0.2-lean (11 November 2026). Menggantikan v0.1.
+**Versi:** 0.2-lean (11 November 2026), direvisi 12 November 2026 (Fase 8).
+Menggantikan v0.1.
+
+**Revisi 12 November 2026 (seluruhnya disetujui).** Tidak ada model fisika,
+reward (E9), λ, κ bawaan, geometri scene, basis data kanal, atau
+hiperparameter PPO yang berubah. Yang berubah: (a) **A1 (fasa absolut)
+menjadi metode utama**, M1/M2 dan sapuan κ menjadi ablasi parameterisasi fasa
+(§0, §5.3, §6.1); (b) **baseline B0 "No-RIS"** ditambahkan sebagai lantai
+sistem (§6.2); (c) **A1-FullCSI** ditambahkan sebagai ablasi observasi pada
+metode utama (§6.1, §7 E5); (d) **A1 dilatih ulang pada Γ = 10 dan 16 dB**
+(§7 E4b); (e) **F2 diganti menjadi dua panel** dan F2b diserap ke dalamnya
+(§11); (f) subbagian **§1.1 "Hasil terhadap hipotesis"** menyatakan apa yang
+tercapai dan apa yang tidak.
 **Target:** jurnal Q2, naskah siap kirim dalam ≤ 8 minggu, PC dengan GPU 12 GB VRAM.
 
 Dokumen ini adalah **sumber kebenaran tunggal** untuk model sistem, MDP, baseline, dan eksperimen. Setiap rumus di kode harus bisa ditelusuri ke nomor persamaan di sini.
@@ -35,6 +47,22 @@ Kontribusi yang ditargetkan:
 2. Formulasi MDP dengan observasi parsial (kanal efektif + estimasi posisi dari tracker) sehingga keputusan saat ini memengaruhi kualitas observasi berikutnya.
 3. Perbandingan DRL terhadap baseline geometris dan oracle ber-CSI-sempurna, termasuk oracle dengan CSI usang dan biaya komputasi.
 
+**Metode utama (ditetapkan 2026-11-12, disetujui).** Metode utama adalah
+**A1 = PPO-PO dengan fasa ABSOLUT per frame**; M1 (fasa inkremental, kappa =
+0,1) dan sapuan kappa turun menjadi **ablasi parameterisasi fasa**, dan M2
+tetap ada sebagai varian inkremental ber-CSI-penuh. Alasannya terukur, bukan
+preferensi: pada set test A1 mencapai +8,334 reward per langkah sementara M1
++3,590 dan M2 +3,603, padahal ketiganya berbeda hanya pada dua tombol dan
+A1 berbeda dari M1 **hanya** pada mode fasa. Sapuan kappa membuktikan bahwa
+yang mengikat memang parameterisasinya, bukan ukuran langkahnya: menaikkan
+kappa dari 0,1 ke 0,25 dan 0,5 tidak memperbaiki M1 (+3,873 dan +3,782 di
+val, lawan +4,098 pada kappa = 0,1).
+
+Pergantian peran ini **tidak** mengubah kunci metode, nama direktori hasil,
+maupun angka run mana pun: yang berubah hanya peran, urutan, dan label
+tampilan di dokumen, tabel, dan gambar. Provenans tiap run tetap bisa
+ditelusuri ke antrean yang menghasilkannya.
+
 ---
 
 ## 1. Pertanyaan Riset dan Hipotesis
@@ -47,6 +75,31 @@ Kontribusi yang ditargetkan:
 | RQ4 | Apakah kanal hibrida konsisten dengan model RIS analitik? | Selisih ≤ 0,5 dB pada konfigurasi ruang bebas setelah kalibrasi konstan | E0 |
 
 Revisi angka hipotesis setelah Fase 3 jika tidak realistis.
+
+### 1.1 Hasil terhadap hipotesis
+
+Teks hipotesis di atas **tidak diubah**: ia ditulis sebelum eksperimen dan
+dibiarkan apa adanya supaya bisa dibandingkan dengan hasilnya. Yang di bawah
+ini adalah hasilnya, dinyatakan apa adanya termasuk yang tidak tercapai.
+
+| ID | Hasil terukur (set test, Gamma = 13 dB, P_max = 30 dBm) | Tercapai? |
+|---|---|---|
+| RQ1 | A1 mencapai rate minimum 73% dari B3 Oracle-GD, bukan >= 80% yang ditargetkan. Reward per langkah A1 (+8,334) berada **di antara** B4-D5 (+8,454) dan B4-D10 (+7,840), yaitu setara oracle yang CSI-nya usang 5-10 langkah. Keunggulan kecepatan tercapai telak: 0,141 ms lawan 2.054,5 ms per keputusan. | **Sebagian** |
+| RQ2 | A1 mengungguli B2 Geometric (+8,334 lawan +2,143) dan B4-D10 (+7,840). Pengelompokan kecepatan target nyaris tidak mengubah apa pun (M1: 0,411 / 0,385 / 0,404 pemenuhan SCNR di 1-3, 4-7, 8-10 m/s), jadi klaim "terutama pada kecepatan tinggi" **tidak** didukung data. | **Sebagian** |
+| RQ3 | Trade-off terhadap Gamma digambarkan F8. Selisih terhadap Geometric pada daya rendah: lihat E4a/F7. | lihat F8, F7 |
+| RQ4 | Selisih kalibrasi konstan +1,05 dB dengan sebaran 0,00 dB pada d2 = 11-31 m, dan uji implementasi 0,0144 dB (ambang 0,1 dB). Jauh di bawah 0,5 dB. | **Ya** |
+
+Tiga catatan yang tidak boleh hilang dari naskah:
+
+* **A1 tidak konvergen, ia berosilasi.** Ketiga seed memuncak di 350-450 ribu
+  langkah lalu ambruk (pemenuhan SCNR 0,95 -> 0,55 tanpa kehilangan rate),
+  lalu pulih sebagian. Angka yang dilaporkan adalah checkpoint terbaik di val
+  (§6.1), dan ketidakstabilannya dinyatakan sebagai keterbatasan, bukan
+  disembunyikan.
+* **Baseline tanpa RIS (B0) adalah pembanding yang benar untuk klaim "RIS
+  menambah sekian"**, bukan B1/B2 yang keduanya tetap memakai RIS.
+* **n = 3 seed**. Lihat §9: Cohen's d pada skala ini tidak terbaca sebagai
+  ukuran efek dan hanya selisih beserta CI bootstrap yang dilaporkan.
 
 ---
 
@@ -293,13 +346,33 @@ Normalisasi observasi dengan running mean/std, dibekukan saat evaluasi.
 
 a_t = [Δφ ∈ [−1,1]^M, ρ_raw ∈ [−1,1], p_raw ∈ [−1,1]^K], dimensi M + 1 + K = 67.
 
-- φ_t = (φ_{t−1} + κπ Δφ) mod 2π, κ = 0,1. Ablasi: absolut φ_t = π(Δφ + 1).
+- **Metode utama (A1): fasa ABSOLUT per frame**, φ_t = π(Δφ + 1). Ablasi
+  parameterisasi fasa: inkremental φ_t = (φ_{t−1} + κπ Δφ) mod 2π dengan
+  κ ∈ {0,1; 0,25; 0,5} (M1, M2 dan sapuan κ).
 
   **κ disapu atas {0,1; 0,25; 0,5}** (ditambahkan 2026-11-12, disetujui). Alasannya terukur, bukan dugaan: pada κ = 0,1 M1 dan M2 tidak pernah melewati pemenuhan SCNR 0,46 pada seed mana pun, sedangkan A1 — yang berbeda **hanya** pada mode fasa — mencapai pemenuhan 0,95–0,96 dengan rate yang sama. Jadi yang mengikat adalah seberapa cepat fasa boleh bergerak, bukan bobot reward λ. Dari fasa acak, menggeser satu elemen sejauh π butuh 1/κ langkah: 10 langkah pada κ = 0,1 (≈ 29% episode 35 langkah), 4 pada 0,25, 2 pada 0,5. Lihat `docs/LOG.md` 2026-11-11 (k).
 - ρ = (ρ_raw + 1)/2: fraksi daya sensing.
 - p = softmax(p_raw): bobot daya pengguna.
 - **W**_c: arah RZF dari ĥ_{e,k} (regularisasi K σ_n²/P_max), kolom dinormalisasi lalu diskalakan √((1−ρ) P_max p_k).
 - **w**_s = √(ρ P_max) · ĉ^*/‖ĉ‖, ĉ^T = ĝ_t^T Θ **G**, dengan ĝ_t dari model LoS gelombang sferis ke estimasi posisi target.
+
+**Mengapa fasa absolut per frame adalah pilihan yang sah secara fisik**
+(ditambahkan 2026-11-12, disetujui). Pembatasan inkremental κ = 0,1 adalah
+**pilihan desain RL** — ia memperhalus ruang aksi dan membuat keputusan
+berurutan saling terkait — dan bukan batasan perangkat keras. RIS yang
+ditinjau di sini adalah permukaan reflektif pasif dengan elemen yang
+ditala oleh dioda PIN atau varaktor; waktu penyetelan elemen semacam itu
+berada jauh di bawah Δt = 0,1 s, sehingga mengganti seluruh profil fasa
+setiap frame tidak melanggar apa pun di sisi perangkat.
+**[RUJUKAN PERLU DIVERIFIKASI: angka waktu penyetelan elemen RIS — jangan
+mengutip angka sebelum sumbernya dibaca dan dicocokkan dengan jenis elemen
+yang diasumsikan di sini.]**
+
+Yang justru perlu dinyatakan adalah **harga** pilihan inkremental: dari fasa
+awal acak, menggeser satu elemen sejauh π membutuhkan 1/κ langkah, yaitu 10
+langkah pada κ = 0,1 — sekitar 29% dari episode 35 langkah. Sapuan κ
+(E5) mengubah ablasi ini dari biner menjadi kuantitatif dan menunjukkan bahwa
+melonggarkan κ sampai 0,5 **tidak** menutup jaraknya terhadap fasa absolut.
 
 ### 5.4 Reward
 
@@ -329,11 +402,18 @@ Laju **tidak** turun saat λ naik — memenuhi kendala sensing di geometri ini p
 
 ### 6.1 Agen DRL (Stable-Baselines3)
 
-| ID | Metode | Observasi |
-|---|---|---|
-| M1 | **PPO-PO** (utama) | Parsial + frame-stack 4 |
-| M2 | PPO-FullCSI | Penuh + frame-stack 4 |
-| A1 | PPO-PO-absolute (ablasi) | Seperti M1, fasa absolut |
+| ID | Metode | Fasa | Observasi | Peran |
+|---|---|---|---|---|
+| A1 | **PPO-PO-absolute** | absolut | Parsial + frame-stack 4 | **utama** |
+| A1-FullCSI | PPO-absolute, CSI penuh | absolut | Penuh + frame-stack 4 | ablasi **observasi** |
+| M1 | PPO-PO | inkremental, κ | Parsial + frame-stack 4 | ablasi **parameterisasi fasa** |
+| M2 | PPO-FullCSI | inkremental, κ | Penuh + frame-stack 4 | ablasi parameterisasi fasa, CSI penuh |
+
+A1-FullCSI ditambahkan 2026-11-12 (disetujui). Tanpa baris itu, pertanyaan
+"berapa harga observasi parsial" hanya bisa dijawab dari pasangan M1/M2,
+yaitu pada parameterisasi fasa yang justru menjadi kendala pengikatnya —
+jawabannya akan mencampur dua sebab. A1 dan A1-FullCSI berbeda **hanya** pada
+mode observasi.
 
 Hiperparameter: lr 3e-4, γ 0,95, GAE λ 0,95, clip 0,2, n_steps 512 × 8 env, batch 256, 10 epoch, ent_coef 0, MLP [256, 256], 1e6 langkah (2e6 untuk E4b, lihat §7). Tuning ringan hanya di val, lalu dibekukan. **Pelatihan di CPU** (MLP kecil, env NumPy).
 
@@ -355,6 +435,7 @@ SCNR ikut hilang -- menyentuh definisi reward dan belum diuji.
 
 | ID | Baseline | Informasi |
 |---|---|---|
+| B0 | **No-RIS**: kaskade RIS dihapus seluruhnya (h_e = h_d, c = h_{d,t}, b = h^{(r)}_{d,t}); RZF dari h_d SEBENARNYA dan w_s ∝ h_{d,t}^*/‖h_{d,t}‖; ρ dan bobot daya dari grid val | CSI langsung **sempurna** |
 | B1 | **Random**: fasa acak per langkah, ρ terbaik dari grid val | Sama dengan M1 |
 | B2 | **Geometric**: φ_m = −arg( Σ_i ω_i [ĝ_i]_m [**G ā**]_m ), ĝ_i model LoS ke estimasi posisi pengguna dan target, **ā** vektor singular kanan utama **G**; ω_i dan ρ dari grid val | Sama dengan M1 |
 | B3 | **Oracle-GD**: Adam per langkah atas φ, ρ, p dengan struktur precoder yang sama; objektif softmin(R) − λ·softplus-hinge(SCNR); 300 iterasi, 4 restart (geometris + acak) | CSI dan posisi sempurna |
@@ -369,6 +450,15 @@ disengaja:
   dan rumus fasa B2 tidak terdefinisi pada aksi inkremental. Ini **merugikan**
   M1, bukan menguntungkannya: baseline boleh melompat ke fasa mana pun
   seketika, M1 harus merambat κ·π per langkah.
+* **B0** berjalan dengan `no_ris=True` **dan** `perfect_csi=True`
+  (ditambahkan 2026-11-12, disetujui). B1 dan B2 keduanya masih memakai RIS,
+  jadi keduanya tidak bisa menjawab "berapa yang RIS tambahkan"; B0 bisa.
+  CSI langsung sempurna diberikan dengan sengaja supaya B0 menjadi **batas
+  atas** sistem tanpa RIS: apa pun yang tersisa di atas B0 tidak dapat
+  dijelaskan sebagai kekurangan estimasi kanal di sisi pembanding. Clutter
+  **tidak** ikut dihapus — H_c adalah jalur langsung BS-tx → BS-rx dan tidak
+  melewati RIS. Fasa RIS tidak berpengaruh sama sekali pada B0, dan hal itu
+  diuji (`tests/test_b0_no_ris.py`);
 * B3/B4 berjalan dengan `perfect_csi=True`, yang membuat precoder memakai
   kanal efektif sebenarnya (tanpa NMSE ε) dan beam sensing memakai **g**_t
   sebenarnya, sesuai "CSI dan posisi sempurna" di tabel. Default-nya **mati**;
@@ -393,16 +483,16 @@ Prioritas: **P1** wajib untuk paper, **P2** penting tetapi murah, **P3** hanya j
 |---|---|---|---|
 | E0 | P1 | Validasi ringan §4.5 | F3, T1 |
 | E1 | P1 | Peta cakupan BS langsung vs lewat RIS (profil fokus terbaik per titik) dan peta SNR radar ideal di ROI, P_max ∈ {20, 30, 40} dBm. Melaporkan juga **penguatan kaskade RIS atas jalur langsung**, yang menjadi kriteria Gate 1 | F1, F2 |
-| E2 | P1 | Kurva pelatihan M1, M2, A1, masing-masing 3 seed | F4 |
+| E2 | P1 | Kurva pelatihan A1 (utama), A1-FullCSI, M1, M2, masing-masing 3 seed | F4 |
 | E3 | P1 | Semua metode di set test: 50 lintasan × 3 seed derau = 150 episode per seed latih (agen: 3 seed latih → 450 episode), P_max = 30 dBm. Metrik: rata-rata dan CDF rate minimum, pemenuhan SCNR, durasi track, galat posisi tracker | T2, F5, F6 |
 | E4a | P2 | Agen dari E2 dievaluasi pada P_max ∈ {20, 25, 30, 35, 40} dBm dan kelompok kecepatan {1–3, 4–7, 8–10} m/s, tanpa latih ulang | F7 |
-| E4b | P1 | Latih ulang M1 untuk Γ ∈ {10, 16} dB (3 seed, **2e6 langkah**; Γ = 13 dari E2), evaluasi semua metode untuk menggambar trade-off rate minimum vs pemenuhan SCNR | F8 |
-| E5 | P2 | Ablasi fasa inkremental vs absolut (dari E2), **plus sapuan κ ∈ {0,1; 0,25; 0,5} untuk M1 (3 seed)** — mengubah ablasi dari biner menjadi kuantitatif | T3 |
+| E4b | P1 | Latih ulang **A1 dan M1** untuk Γ ∈ {10, 16} dB (3 seed masing-masing; M1 2e6 langkah, A1 **1e6** langkah karena A1 memuncak di 350–450 ribu; Γ = 13 dari E2), evaluasi semua metode untuk menggambar trade-off rate minimum vs pemenuhan SCNR | F8 |
+| E5 | P2 | Dua ablasi pada metode utama: **observasi** (A1 vs A1-FullCSI, keduanya fasa absolut) dan **parameterisasi fasa** (A1 vs M1/M2, plus sapuan κ ∈ {0,1; 0,25; 0,5} untuk M1, 3 seed) — yang kedua mengubah ablasi dari biner menjadi kuantitatif | T3 |
 | E6 | P2 | Waktu inferensi per keputusan M1 vs waktu per langkah B3; waktu prakomputasi ray tracing; waktu pelatihan | T3 |
 | E7 | P3 | Ketahanan tanpa latih ulang: NMSE ε ∈ {−30, −20, −10} dB, σ_u ∈ {0,1, 0,5, 2} m | F9 |
 | E8 | P3 | Uji di scene kota bawaan tanpa latih ulang | Teks |
 
-Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 + M1(κ = 0,25; 0,5) × 3 = **21 run** (15 × 1e6 + 6 × 2e6 langkah).
+Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 + M1(κ = 0,25; 0,5) × 3 = **21 run** Fase 5 (15 × 1e6 + 6 × 2e6 langkah), ditambah A1-FullCSI × 3 + A1(Γ = 10, 16) × 3 = **9 run** Fase 8 (9 × 1e6 langkah). Total **30 run**.
 
 **Definisi dua metrik E3 yang namanya saja tidak cukup** (ditambahkan
 2026-11-12; keduanya diimplementasikan di `eval/metrics.py` dan diuji):
@@ -437,7 +527,7 @@ Jumlah pelatihan: (M1, M2, A1) × 3 + M1(Γ = 10, 16) × 3 + M1(κ = 0,25; 0,5) 
 | Geometri | jalan 6 m; BS (−16, −1, 10); RIS (2,9, 4, 6); d(BS–RIS) 20,0 m; ROI y ∈ [14, 34], 440 titik @ 0,5 m |
 | Lintasan | 200 / 30 / 50 |
 | Seed pelatihan | 3 |
-| Langkah pelatihan | 1e6 (E2, sapuan κ); 2e6 (E4b, karena pada 1e6 kurva val Γ = 10 dan 16 masih menanjak) |
+| Langkah pelatihan | 1e6 (E2, sapuan κ, A1-FullCSI, dan A1 pada Γ = 10/16); 2e6 (E4b untuk **M1**, karena pada 1e6 kurva val M1 di Γ = 10 dan 16 masih menanjak — A1 justru sudah lewat puncaknya di 350–450 ribu, jadi 1e6 sudah lebih dari cukup) |
 | Model yang dilaporkan | checkpoint dengan reward val terbaik (§6.1) |
 
 Semua nilai di `configs/base.yaml`.
@@ -448,7 +538,7 @@ Semua nilai di `configs/base.yaml`.
 
 - 3 seed pelatihan per konfigurasi; tiap seed dievaluasi pada 150 episode test yang sama.
 - Laporkan rata-rata ± interval kepercayaan 95% (bootstrap atas episode, dikelompokkan per seed). Kurva pelatihan: rata-rata ± std antar-seed.
-- Uji beda utama M1 vs B2 dan M1 vs B4: Welch t-test atas rata-rata per seed, plus ukuran efek. Nyatakan bahwa n = 3 seed membatasi daya uji.
+- Uji beda utama **A1 vs B0** (sumbangan RIS), **A1 vs B2**, **A1 vs B4**, dan **A1 vs A1-FullCSI** (harga observasi parsial): Welch t-test atas rata-rata per seed, plus ukuran efek. M1 vs B2 tetap dilaporkan supaya angka Fase 5–7 masih bisa dicocokkan. Nyatakan bahwa n = 3 seed membatasi daya uji.
 - **Cohen's d di sini tidak dapat dibaca sebagai ukuran efek** (terukur
   2026-11-12: d = 10–73). Dengan n = 3 dan kebijakan yang sangat konsisten,
   simpangan baku antar-seed nyaris nol sehingga pembaginya runtuh dan d
@@ -480,16 +570,16 @@ Semua nilai di `configs/base.yaml`.
 | ID | Isi |
 |---|---|
 | F1 | Tampak atas scene: BS, RIS, ROI, contoh lintasan |
-| F2 | Peta SNR komunikasi dan radar ideal: BS langsung vs lewat RIS |
+| F2 | Dua panel dari data E1 yang sama: (a) peta **penguatan** RIS komunikasi, MRT dengan RIS dikurangi MRT tanpa RIS, berkontur ambang Gate 1 (6 dB); (b) peta SNR radar ideal (E7, ρ = 1) lewat RIS, berkontur Γ, dengan fraksi ROI tanpa RIS dilaporkan di judul panel. Menggantikan F2 lama (SNR mutlak pada precoder yang sama) dan **menyerap F2b**, yang menjadi mubazir |
 | F3 | Validasi kanal hibrida vs analitik |
-| F4 | Kurva pelatihan M1, M2, A1 |
+| F4 | Kurva pelatihan A1, A1-FullCSI, M1, M2 |
 | F5 | CDF rate minimum semua metode |
 | F6 | Contoh episode: SCNR terhadap waktu, ambang Γ, flag deteksi, galat posisi |
 | F7 | Kinerja vs P_max dan kecepatan target |
 | F8 | Trade-off rate minimum vs pemenuhan SCNR (Γ = 10, 13, 16 dB) |
 | T1 | Galat validasi kanal |
 | T2 | Hasil utama set test |
-| T3 | Ablasi dan biaya komputasi |
+| T3 | T3a ablasi (observasi dan parameterisasi fasa) + T3b biaya komputasi |
 
 ---
 

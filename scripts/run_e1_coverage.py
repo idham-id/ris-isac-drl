@@ -36,8 +36,8 @@ from risisac.channels.rt_extract import (RayTracingSettings,             # noqa:
                                          narrowband_coefficients,
                                          release_gpu_memory)
 from risisac.config import config_hash, load_config, noise_power_watt    # noqa: E402
-from risisac.eval.plots import (plot_f1_layout, plot_f2_coverage,        # noqa: E402
-                                plot_f2_radar)
+from risisac.eval.plots import (plot_f1_layout,                         # noqa: E402
+                                plot_f2_coverage)
 from risisac.scene.placement import Placement                            # noqa: E402
 from risisac.scene.synthetic_l import (SyntheticLSpec,                   # noqa: E402
                                        load_scene_from_config, write_xml)
@@ -204,6 +204,27 @@ def main() -> int:
     scnr = {p: to_db(ideal_scnr(c_eff, b, dbm_to_watt(p), eta, sigma2, n_int))
             for p in p_values}
 
+    # SCNR ideal "sistem lawan sistem" (Fase 8, disetujui 2026-11-12). Yang di
+    # atas memakai precoder a_bar untuk KEDUA sisi, dan itu pembanding yang
+    # sama cacatnya dengan "precoder sama" di sisi komunikasi: a_bar
+    # dioptimalkan untuk mencapai RIS. Di bawah ini tiap sistem memakai beam
+    # TERBAIKNYA sendiri, yaitu MRT pada kanal maju yang dimilikinya:
+    #   lewat RIS    : w ~ conj(h_e)/||h_e||  ->  |c^T w| = ||h_e||
+    #   langsung saja: w ~ conj(h_d)/||h_d||  ->  |c^T w| = ||h_d||
+    # Kanal baliknya ikut berbeda: dengan RIS b = h^(r)_d + H Theta g, tanpa
+    # RIS b = h^(r)_d saja. Ini yang dipakai F2 panel (b).
+    #
+    # Gate 1 SENGAJA tetap memakai `scnr` berbasis a_bar: ambangnya ditetapkan
+    # dan lolos di Fase 1 pada besaran itu, dan menukar besaran di bawah
+    # kriteria yang sama akan membuat riwayat gate tidak bisa dibaca.
+    c_ris_mrt = np.linalg.norm(h_eff, axis=1)                       # (N,)
+    c_dir_mrt = np.linalg.norm(hd, axis=1)                          # (N,)
+    scnr_ris_mrt = {p: to_db(ideal_scnr(c_ris_mrt, b, dbm_to_watt(p), eta,
+                                        sigma2, n_int)) for p in p_values}
+    scnr_direct_mrt = {p: to_db(ideal_scnr(c_dir_mrt, hd_rx, dbm_to_watt(p),
+                                           eta, sigma2, n_int))
+                       for p in p_values}
+
     print("\nFraksi titik ROI di atas ambang:")
     print(f"  {'P_max':>6s} {'komunikasi >10 dB':>19s} {'radar >=G+3':>13s} "
           f"{'median SNR_c':>13s} {'median SCNR':>12s}")
@@ -219,6 +240,14 @@ def main() -> int:
     print(f"  MRT dengan RIS vs MRT tanpa RIS: median "
           f"{float(np.median(mrt_gain)):+.1f} dB, "
           f"RIS menang di {float((mrt_gain > 0).mean()):.3f} ROI")
+    print("\nSCNR ideal sistem-lawan-sistem (MRT masing-masing, rho = 1):")
+    print(f"  {'P_max':>6s} {'median lewat RIS':>17s} {'median langsung':>16s} "
+          f"{'>=Gamma RIS':>12s} {'>=Gamma langsung':>17s}")
+    for p in p_values:
+        print(f"  {p:5.0f}  {float(np.median(scnr_ris_mrt[p])):16.1f} "
+              f"{float(np.median(scnr_direct_mrt[p])):16.1f} "
+              f"{float((scnr_ris_mrt[p] >= gamma_db).mean()):12.3f} "
+              f"{float((scnr_direct_mrt[p] >= gamma_db).mean()):17.3f}")
 
     # ----------------------------------------------------------------- Gate 1
     cov_comm = float((snr_ris[p_default] > comm_thr).mean())
@@ -264,6 +293,8 @@ def main() -> int:
         gain_ris=gain_ris, gain_ris_mrt=gain_ris_mrt,
         ris_gain_db=ris_gain_db,
         scnr_db=np.stack([scnr[p] for p in p_values]),
+        scnr_ris_mrt_db=np.stack([scnr_ris_mrt[p] for p in p_values]),
+        scnr_direct_mrt_db=np.stack([scnr_direct_mrt[p] for p in p_values]),
         p_max_dbm_values=np.array(p_values), G=G, H=H, a_bar=a_bar,
     )
     (out_dir / "gate1.json").write_text(json.dumps(
@@ -277,12 +308,10 @@ def main() -> int:
 
     plot_f1_layout(spec, pl, out_dir / "F1_layout.png",
                    los_ris_fraction=float(los_ris_roi.mean()))
-    plot_f2_coverage(grid[:, :2], snr_direct[p_default], snr_ris[p_default],
-                     out_dir / "F2_coverage.png", m_elements=m_elements,
-                     p_max_dbm=p_default, threshold_db=10.0)
-    plot_f2_radar(grid[:, :2], scnr[p_default], out_dir / "F2b_radar.png",
-                  threshold_db=gamma_db, p_max_dbm=p_default,
-                  m_elements=m_elements)
+    plot_f2_coverage(grid[:, :2], ris_gain_db, scnr_ris_mrt[p_default],
+                     scnr_direct_mrt[p_default], out_dir / "F2_coverage.png",
+                     m_elements=m_elements, p_max_dbm=p_default,
+                     gain_threshold_db=gain_thr, gamma_db=gamma_db)
     print(f"\nGambar dan hasil tersimpan di {out_dir}")
     return 0 if passed else 1
 

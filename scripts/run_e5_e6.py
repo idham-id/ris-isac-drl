@@ -48,13 +48,18 @@ from risisac.env import EnvConfig, RisIsacEnv, TrajectoryStore    # noqa: E402
 from risisac.env.vec import make_vec_env                          # noqa: E402
 from risisac.train import METHODS, run_dir                        # noqa: E402
 
-#: Baris E5: (label, config, paper_id).
+#: Baris E5: (label, config, paper_id). Urutannya mengikuti peran Fase 8:
+#: metode utama lebih dulu, lalu ablasi OBSERVASI (A1-FullCSI, yang berbeda
+#: dari A1 hanya pada mode observasi), lalu ablasi PARAMETERISASI FASA
+#: (M1 beserta sapuan kappa, dan M2), lalu pembanding.
 E5_ROWS = (
+    ("A1 absolut, observasi parsial (utama)", "base", "A1"),
+    ("A1-FullCSI absolut, observasi penuh", "base", "A1-FullCSI"),
     ("M1 inkremental, kappa = 0,10", "base", "M1"),
     ("M1 inkremental, kappa = 0,25", "kappa025", "M1"),
     ("M1 inkremental, kappa = 0,50", "kappa050", "M1"),
     ("M2 inkremental, CSI penuh", "base", "M2"),
-    ("A1 absolut", "base", "A1"),
+    ("B0 tanpa RIS (CSI langsung sempurna)", "base", "B0"),
     ("B2 geometris (absolut)", "base", "B2"),
     ("B3 oracle (absolut)", "base", "B3"),
 )
@@ -274,13 +279,19 @@ def main() -> int:
               f"{e6['precompute']['minutes']:.1f} menit "
               f"({args.precompute_source}, tidak diukur ulang)")
 
-    speedup = (b3["ms_per_decision_online"]
-               / e6["agents"]["M1"]["ms_per_decision"]) \
-        if "M1" in e6["agents"] else None
-    e6["m1_vs_b3_online_speedup"] = speedup
-    if speedup:
-        print(f"\n   M1 {speedup:,.0f}x lebih cepat daripada B3 daring "
-              f"per keputusan")
+    # Dilaporkan untuk metode utama (A1) dan untuk M1. Keduanya disimpan:
+    # angka M1 sudah dikutip di Fase 6 dan di dokumen keputusan, jadi
+    # menghapusnya akan membuat catatan lama tidak bisa dicocokkan lagi.
+    print("")
+    for paper_id, key in (("A1", "a1_vs_b3_online_speedup"),
+                          ("M1", "m1_vs_b3_online_speedup")):
+        value = (b3["ms_per_decision_online"]
+                 / e6["agents"][paper_id]["ms_per_decision"]) \
+            if paper_id in e6["agents"] else None
+        e6[key] = value
+        if value:
+            print(f"   {paper_id} {value:,.0f}x lebih cepat daripada B3 "
+                  f"daring per keputusan")
 
     (out_dir / "T3_e6_cost.json").write_text(
         json.dumps(e6, indent=2, default=str), encoding="utf-8")

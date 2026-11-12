@@ -4,8 +4,9 @@ proses (CLAUDE.md).
 Pilihan warna:
 
 * **F2 adalah peta magnitudo relatif terhadap ambang**, jadi skalanya *diverging*
-  dengan titik tengah netral tepat di 0 dB — pembaca langsung melihat di mana
-  SNR lewat RIS menyeberangi ambang Gate 1. Bukan pelangi, bukan jet.
+  dengan titik tengah netral tepat DI ambang kriterianya — 6 dB untuk panel
+  penguatan, Γ untuk panel radar — sehingga batas lulus/tidak terbaca dari
+  warnanya sendiri. Bukan pelangi, bukan jet.
 * **F1 adalah peta identitas**, jadi warnanya *kategorikal* dengan urutan tetap.
   Dipakai palet Okabe-Ito, yang memang dirancang dan diuji aman untuk buta warna.
   Validator palet dari skill dataviz tidak bisa dijalankan di mesin ini (Node.js
@@ -23,7 +24,6 @@ import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.colors import TwoSlopeNorm  # noqa: E402
 from matplotlib.patches import Polygon as MplPolygon  # noqa: E402
 
 # Okabe-Ito, urutan tetap. Jangan dirotasi.
@@ -126,94 +126,85 @@ def plot_f1_layout(spec, placement, out_path: str | Path,
     return out_path
 
 
-def plot_f2_coverage(grid_xy, snr_direct_db, snr_ris_db, out_path: str | Path,
-                     m_elements: int, p_max_dbm: float,
-                     threshold_db: float = 0.0) -> Path:
-    """F2 — peta cakupan: BS langsung vs lewat RIS, pada ambang ``threshold_db``."""
-    out_path = Path(out_path)
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-
+def _to_grid(grid_xy, values):
+    """Susun nilai per titik ROI menjadi matriks (ys, xs) untuk peta."""
     x, y = grid_xy[:, 0], grid_xy[:, 1]
     xs, ys = np.unique(x), np.unique(y)
-
-    def to_grid(values):
-        g = np.full((len(ys), len(xs)), np.nan)
-        xi = np.searchsorted(xs, x)
-        yi = np.searchsorted(ys, y)
-        g[yi, xi] = values
-        return g
-
-    maps = [("BS langsung (precoder sama)", to_grid(snr_direct_db)),
-            (f"Lewat RIS (M = {m_elements}, precoder sama)",
-             to_grid(snr_ris_db))]
-
-    finite = np.concatenate([m[np.isfinite(m)] for _, m in maps])
-    lo, hi = float(np.percentile(finite, 1)), float(np.percentile(finite, 99))
-    lo = min(lo, threshold_db - 1.0)
-    hi = max(hi, threshold_db + 1.0)
-    norm = TwoSlopeNorm(vmin=lo, vcenter=threshold_db, vmax=hi)
-
-    fig, axes = plt.subplots(1, 2, figsize=(10.5, 5.2), dpi=200, sharey=True)
-    extent = [xs.min(), xs.max(), ys.min(), ys.max()]
-
-    for ax, (label, grid) in zip(axes, maps):
-        im = ax.imshow(grid, origin="lower", extent=extent, aspect="auto",
-                       cmap="RdBu_r", norm=norm, interpolation="nearest")
-        above = np.isfinite(grid) & (grid >= threshold_db)
-        frac = above.sum() / max(np.isfinite(grid).sum(), 1)
-        ax.contour(xs, ys, np.nan_to_num(grid, nan=lo), levels=[threshold_db],
-                   colors="#000000", linewidths=1.2)
-        ax.set_title(f"{label}\n{100 * frac:.1f}% titik ≥ {threshold_db:.0f} dB",
-                     fontsize=10)
-        ax.set_xlabel("x [m]", color=TEXT_MUTED)
-        _style_axes(ax)
-
-    axes[0].set_ylabel("y [m]", color=TEXT_MUTED)
-    cbar = fig.colorbar(im, ax=axes, fraction=0.046, pad=0.03)
-    cbar.set_label(f"SNR [dB]  (hitam = ambang {threshold_db:.0f} dB)",
-                   color=TEXT_MUTED, fontsize=9)
-    cbar.ax.tick_params(colors=TEXT_MUTED, labelsize=9)
-    fig.suptitle(f"F2 — Peta cakupan di ROI, P_max = {p_max_dbm:.0f} dBm",
-                 fontsize=12)
-    fig.savefig(out_path, bbox_inches="tight")
-    plt.close(fig)
-    return out_path
+    g = np.full((len(ys), len(xs)), np.nan)
+    g[np.searchsorted(ys, y), np.searchsorted(xs, x)] = values
+    return xs, ys, g
 
 
-def plot_f2_radar(grid_xy, scnr_db, out_path: str | Path,
-                  threshold_db: float, p_max_dbm: float,
-                  m_elements: int) -> Path:
-    """F2b — peta SNR radar ideal di ROI (E7, rho = 1, tanpa clutter).
+def _panel(ax, fig, grid_xy, values, threshold_db, cbar_label):
+    """Satu peta diverging dengan titik tengah tepat di ambangnya.
 
-    Titik tengah skala diverging diletakkan tepat di ``threshold_db`` sehingga
-    batas Gate 1 terbaca langsung dari warnanya.
+    Titik tengah netral diletakkan DI ambang, bukan di nol atau di median,
+    supaya batas lulus/tidak terbaca dari warnanya sendiri dan tidak perlu
+    dicari lewat kontur. Kontur hitam tetap digambar sebagai jangkar.
+    """
+    xs, ys, g = _to_grid(grid_xy, values)
+    finite = g[np.isfinite(g)]
+    span = max(abs(float(np.percentile(finite, 1)) - threshold_db),
+               abs(float(np.percentile(finite, 99)) - threshold_db), 1.0)
+    im = ax.pcolormesh(xs, ys, g, cmap="RdBu_r", shading="nearest",
+                       vmin=threshold_db - span, vmax=threshold_db + span)
+    ax.contour(xs, ys, g, levels=[threshold_db], colors="#000000",
+               linewidths=1.2)
+    ax.set_aspect("equal")
+    ax.set_xlabel("x [m]", color=TEXT_MUTED)
+    _style_axes(ax)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
+    cb.set_label(cbar_label, color=TEXT_MUTED, fontsize=9)
+    cb.ax.tick_params(colors=TEXT_MUTED, labelsize=9)
+    cb.ax.axhline(threshold_db, color="k", linewidth=1.2)
+    return float(np.mean(finite >= threshold_db))
+
+
+def plot_f2_coverage(grid_xy, ris_gain_db, scnr_ris_db, scnr_direct_db,
+                     out_path: str | Path, m_elements: int, p_max_dbm: float,
+                     gain_threshold_db: float, gamma_db: float) -> Path:
+    """F2 — apa yang RIS tambahkan di ROI: dua panel, dua kriteria.
+
+    Panel kiri adalah **penguatan** komunikasi, yaitu MRT pada kanal efektif
+    ber-RIS dikurangi MRT pada jalur langsung saja: tiap sistem memakai
+    beamformer terbaiknya sendiri. Perbandingan pada precoder yang SAMA
+    (``a_bar``) tidak dipakai lagi -- ``a_bar`` dioptimalkan untuk mencapai
+    RIS dan melumpuhkan jalur langsung, sehingga melebih-lebihkan peran RIS
+    (+8,8 dB lawan +1,4 dB pada geometri lama; docs/LOG.md 2026-11-11 (e)).
+
+    Panel kanan adalah SNR radar ideal (E7, rho = 1) **lewat RIS**, dengan
+    kontur Gamma. Fraksi ROI yang memenuhi Gamma tanpa RIS ikut dilaporkan di
+    judulnya: di geometri NLoS ini ia praktis nol, dan menggambarnya sebagai
+    peta ketiga hanya akan menjadi bidang biru rata.
+
+    Gambar ini menggantikan F2 lama (peta SNR mutlak pada precoder yang sama)
+    dan menyerap F2b (peta radar terpisah), yang menjadi mubazir.
     """
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    x, y = grid_xy[:, 0], grid_xy[:, 1]
-    xs, ys = np.unique(x), np.unique(y)
-    g = np.full((len(ys), len(xs)), np.nan)
-    g[np.searchsorted(ys, y), np.searchsorted(xs, x)] = scnr_db
+    fig, axes = plt.subplots(1, 2, figsize=(11.0, 4.8), dpi=200,
+                             constrained_layout=True, sharey=True)
 
-    finite = g[np.isfinite(g)]
-    span = max(abs(float(np.percentile(finite, 1)) - threshold_db),
-               abs(float(np.percentile(finite, 99)) - threshold_db), 1.0)
+    frac_gain = _panel(axes[0], fig, grid_xy, ris_gain_db, gain_threshold_db,
+                       "penguatan RIS [dB]")
+    axes[0].set_title("(a) Penguatan RIS komunikasi, MRT vs MRT\n"
+                      rf"{100 * frac_gain:.1f}% titik $\geq$ "
+                      rf"{gain_threshold_db:.0f} dB", fontsize=10)
+    axes[0].set_ylabel("y [m]", color=TEXT_MUTED)
 
-    fig, ax = plt.subplots(figsize=(5.2, 4.4), constrained_layout=True)
-    im = ax.pcolormesh(xs, ys, g, cmap="RdBu_r", shading="nearest",
-                       vmin=threshold_db - span, vmax=threshold_db + span)
-    ax.contour(xs, ys, g, levels=[threshold_db], colors="k", linewidths=1.2)
-    _style_axes(ax)
-    ax.set_aspect("equal")
-    ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_title(f"SNR radar ideal, M = {m_elements}, "
-                 rf"$P_{{\max}}$ = {p_max_dbm:.0f} dBm")
-    cb = fig.colorbar(im, ax=ax)
-    cb.set_label("SCNR (dB)")
-    cb.ax.axhline(threshold_db, color="k", linewidth=1.2)
-    fig.savefig(out_path, dpi=200)
+    frac_ris = _panel(axes[1], fig, grid_xy, scnr_ris_db, gamma_db,
+                      "SCNR ideal [dB]")
+    direct = np.asarray(scnr_direct_db, dtype=float)
+    frac_dir = float(np.mean(direct >= gamma_db))
+    axes[1].set_title(r"(b) SNR radar ideal lewat RIS ($\rho$ = 1)" "\n"
+                      rf"{100 * frac_ris:.1f}% titik $\geq$ $\Gamma$ = "
+                      rf"{gamma_db:.0f} dB; tanpa RIS {100 * frac_dir:.1f}%",
+                      fontsize=10)
+
+    fig.suptitle(f"F2 — kontribusi RIS di ROI, M = {m_elements}, "
+                 rf"$P_{{\max}}$ = {p_max_dbm:.0f} dBm", fontsize=12)
+    fig.savefig(out_path, bbox_inches="tight")
     plt.close(fig)
     return out_path
 
@@ -275,9 +266,21 @@ def plot_f3_e0(table: dict, out_path, tolerance_db: float = 0.1):
 # Warna tetap per metode: dipakai F4 sekarang dan gambar evaluasi nanti,
 # supaya pembaca tidak perlu membaca ulang legenda di tiap gambar.
 METHOD_COLORS = {
+    # A1 adalah METODE UTAMA sejak Fase 8, jadi ia memakai warna yang paling
+    # mudah dibedakan; M1 dan M2 menjadi ablasi tetapi WARNANYA TIDAK DIPUTAR,
+    # supaya gambar Fase 5-7 dan gambar Fase 8 masih bisa dibandingkan
+    # berdampingan oleh pembaca yang sudah hafal legendanya.
     "M1": OKABE_ITO["blue"],
     "M2": OKABE_ITO["vermillion"],
     "A1": OKABE_ITO["green"],
+    # A1-FullCSI adalah A1 dengan observasi penuh: warna yang sama dengan A1
+    # akan menyesatkan, warna kategorikal baru akan menyiratkan metode yang
+    # tidak berhubungan. Dipakai kuning Okabe-Ito, tetangga terdekat hijau
+    # pada palet yang sama.
+    "A1-FullCSI": OKABE_ITO["yellow"],
+    # B0 tanpa RIS sama sekali: lantai sistem, digambar sebagai abu-abu paling
+    # terang supaya terbaca sebagai batas bawah, bukan sebagai pesaing.
+    "B0": "#C9C9C9",
     "B1": OKABE_ITO["purple"],
     "B2": OKABE_ITO["orange"],
     # Keluarga oracle digambar sebagai tangga ABU-ABU, bukan sebagai tiga
@@ -289,8 +292,10 @@ METHOD_COLORS = {
     "B4-D5": "#6E6E6E",
     "B4-D10": "#A6A6A6",
 }
-#: Urutan metode di legenda dan tabel.
-METHOD_ORDER = ("B1", "B2", "B3", "B4-D5", "B4-D10", "M1", "M2", "A1")
+#: Urutan metode di legenda dan tabel (Fase 8): baseline dari yang terlemah,
+#: lalu METODE UTAMA A1 dan varian ber-CSI-penuhnya, lalu ablasi M1 dan M2.
+METHOD_ORDER = ("B0", "B1", "B2", "B3", "B4-D5", "B4-D10",
+                "A1", "A1-FullCSI", "M1", "M2")
 
 
 def _ordered(names):
@@ -371,7 +376,7 @@ def plot_f5_rate_cdf(steps, out_path, scnr_threshold_db: float | None = None):
 
 
 def plot_f6_episode(steps, out_path, trajectory_index: int,
-                    methods=("B2", "M1", "A1", "B3"),
+                    methods=("B2", "A1", "M1", "B3"),
                     scnr_threshold_db: float = 13.0,
                     sigma_max_m: float = 5.0, dt_s: float = 0.1):
     """F6 - satu episode: SCNR terhadap waktu, ambang, deteksi, galat tracker.

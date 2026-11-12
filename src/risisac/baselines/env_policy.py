@@ -1,4 +1,4 @@
-"""Baseline B1 dan B2 sebagai kebijakan di dalam environment (§6.2).
+"""Baseline B0, B1, dan B2 sebagai kebijakan di dalam environment (§6.2).
 
 Fase 3 mengevaluasi baseline pada *snapshot* lepas: satu batch langkah waktu
 tanpa urutan. Itu cukup untuk uji kelayakan, tetapi tidak cukup untuk Gate 5,
@@ -72,6 +72,49 @@ class BaselineEnvPolicy:
                                np.zeros(int(num_users))])
 
 
+def power_weights_from_share(share: float, num_users: int) -> np.ndarray:
+    """Bobot daya dari satu angka: ``share`` ke pengguna 0, sisanya dibagi rata.
+
+    Disusun seperti ``omega`` pada B2 (satu angka untuk target, sisanya dibagi
+    rata) supaya grid val B0 memakai bentuk yang sama dan bisa dibaca dengan
+    cara yang sama. Dengan K = 2, grid {0,25; 0,5; 0,75} mencakup kedua arah
+    ketidakseimbangan -- kedua pengguna punya kanal berbeda, jadi 0,25 dan
+    0,75 bukan cerminan satu sama lain.
+    """
+    rest = (1.0 - float(share)) / max(int(num_users) - 1, 1)
+    return np.array([float(share)] + [rest] * (int(num_users) - 1))
+
+
+class NoRisEnvPolicy(BaselineEnvPolicy):
+    """B0 -- sistem TANPA RIS sama sekali, dengan CSI langsung SEMPURNA.
+
+    Dijalankan pada env ber-``no_ris=True`` dan ``perfect_csi=True``, sehingga
+    kaskade RIS hilang dari (E2) dan (E5) sementara precoder dibangun dari
+    h_d sebenarnya. B0 karena itu bukan "sistem tanpa RIS yang realistis"
+    melainkan **batas atasnya**: apa pun yang RIS tambahkan di atas B0 tidak
+    bisa dijelaskan sebagai kekurangan estimasi kanal di sisi pembanding.
+
+    Keputusannya tidak bergantung pada waktu maupun observasi: tanpa kaskade,
+    satu-satunya tuas yang tersisa adalah pembagian daya. ``delta`` dikirim
+    nol; pada mode absolut itu berarti phi = pi untuk semua elemen, dan nilai
+    itu memang tidak berpengaruh karena tiap suku yang memuatnya sudah hilang.
+    """
+
+    name = "B0"
+
+    def __init__(self, num_elements: int, num_users: int,
+                 sensing_fraction: float, weight_share: float):
+        self.num_elements = int(num_elements)
+        self.num_users = int(num_users)
+        self.rho = float(sensing_fraction)
+        self.weights = power_weights_from_share(weight_share, num_users)
+
+    def act(self, env) -> np.ndarray:
+        return np.concatenate([np.zeros(self.num_elements),
+                               [2.0 * self.rho - 1.0],
+                               _weights_to_raw(self.weights)])
+
+
 class RandomEnvPolicy(BaselineEnvPolicy):
     """B1 -- fasa acak seragam tiap langkah, ``rho`` tetap dari grid val."""
 
@@ -143,9 +186,13 @@ class GeometricEnvPolicy(BaselineEnvPolicy):
 
 def make_baseline(name: str, cfg: dict, env_cfg, seed: int = 0,
                   **tuned) -> BaselineEnvPolicy:
-    """Buat B1/B2 dari config; ``tuned`` berisi hasil sapuan grid val."""
+    """Buat B0/B1/B2 dari config; ``tuned`` berisi hasil sapuan grid val."""
     from ..channels.geometry import ris_element_positions
 
+    if name.lower() in ("b0", "no_ris"):
+        return NoRisEnvPolicy(env_cfg.num_elements, env_cfg.num_users,
+                              float(tuned["rho"]),
+                              float(tuned["weight_share"]))
     if name.lower() in ("b1", "random"):
         return RandomEnvPolicy(env_cfg.num_elements, env_cfg.num_users,
                                float(tuned["rho"]), seed=seed)
@@ -158,12 +205,12 @@ def make_baseline(name: str, cfg: dict, env_cfg, seed: int = 0,
                                   env_cfg.user_pos_std_m,
                                   float(tuned["omega_target"]),
                                   float(tuned["rho"]), seed=seed)
-    raise ValueError(f"baseline tidak dikenal: {name!r} (b1 | b2)")
+    raise ValueError(f"baseline tidak dikenal: {name!r} (b0 | b1 | b2)")
 
 
 def tune_baseline(name: str, env, cfg: dict, env_cfg, indices, seed: int = 0,
                   verbose: bool = False) -> dict:
-    """Sapu grid val untuk B1/B2 **lewat env**, pilih reward per langkah terbaik.
+    """Sapu grid val untuk B0/B1/B2 **lewat env**, pilih reward/langkah terbaik.
 
     §6.2 menetapkan rho (dan omega untuk B2) "dari grid val"; sapuan ini
     dijalankan pada split val dengan seed tetap, lalu nilainya dibekukan untuk
@@ -171,11 +218,20 @@ def tune_baseline(name: str, env, cfg: dict, env_cfg, indices, seed: int = 0,
     baseline yang dibandingkan di Gate 5 juga berjalan lewat env -- menyetel di
     satu jalur lalu melaporkan di jalur lain akan memberi baseline rho yang
     bukan optimalnya.
+
+    B0 menyapu rho DAN bobot daya, karena tanpa kaskade RIS hanya itulah
+    keputusan yang tersisa baginya; gridnya memakai kembali
+    ``baselines.geometric.weight_grid`` ketimbang menambah kunci config baru,
+    yang akan mengganti ``config_hash`` seluruh proyek demi tiga angka.
     """
     from ..eval.rollout import rollout_baseline, summarise
 
     rho_grid = [float(v) for v in cfg["baselines"]["rho_grid"]]
-    if name.lower() in ("b1", "random"):
+    if name.lower() in ("b0", "no_ris"):
+        shares = [float(v) for v in cfg["baselines"]["geometric"]["weight_grid"]]
+        combos = [{"weight_share": w, "rho": r}
+                  for w in shares for r in rho_grid]
+    elif name.lower() in ("b1", "random"):
         combos = [{"rho": r} for r in rho_grid]
     elif name.lower() in ("b2", "geometric"):
         weights = [float(v) for v in cfg["baselines"]["geometric"]["weight_grid"]]
