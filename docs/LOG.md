@@ -2580,3 +2580,47 @@ bukan atas file di disk, supaya `sha256sum -c` cocok setelah penyaringan path.
 Dua run Fase 7 (`a1stable` `7fef4cef645d`, `a1entropy` `f60243e0e922`)
 **tidak** ikut: keduanya eksplorasi stabilisasi yang tidak dikutip naskah dan
 tidak punya direktori `eval/` atau `gate5/`.
+
+### (D) Riwayat git ditulis ulang sekali, sebelum push pertama
+
+Trailer `Claude-Session` dan `Co-Authored-By` dibuang dari 26 commit dengan
+`git filter-branch --msg-filter`. **Tidak ada isi file yang berubah**:
+pohon tiap commit identik satu per satu (26/26), dan `git diff` antara HEAD
+lama dan baru kosong. Branch `master` diganti nama menjadi `main`.
+
+Konsekuensi yang perlu dicatat: `meta.json` dan `done.json` tiap run
+pelatihan menyimpan hash commit **lama**, yang tidak ada di riwayat publik.
+Itu tidak bisa diperbaiki tanpa melatih ulang, jadi petanya disimpan di sini.
+Artefak di `results/paper/` **dibuat ulang** setelah penulisan ulang, sehingga
+`manifest.json` menunjuk commit yang ada; hasilnya 8 PNG dan 7 tabel LaTeX
+**identik byte demi byte**, dan 8 PDF identik kecuali tanggal pembuatan yang
+disisipkan penulis PDF.
+
+| Lama | Baru | Commit |
+|---|---|---|
+| `5937315` | `5937315` | Initial commit: rancangan eksperimen |
+| `3be97d0` | `3cd86bb` | Fase 0: setup environment, Gate 0 |
+| `b16c3ea` | `86718d9` | Fase 0: max_num_paths_per_src |
+| `770074f` | `b662eaa` | Fase 1: scene sintetis L, E1 |
+| `958ac8e` | `5a94ba2` | Abaikan artefak build |
+| `67e4477` | `4458306` | Fase 1 revisi: max_depth=3 tidak konvergen |
+| `30ea090` | `a3f791a` | Fase 1: hamburan difus, max_depth 5 |
+| `553f8d8` | `560f546` | Migrasi ke desain v0.2-lean |
+| `dcdcf4f` | `1da84cc` | Fase 1: geometri dioptimalkan ulang |
+| `95bc4c6` | `25e6a37` | Koreksi kriteria Gate 1 (MRT lawan MRT) |
+| `5803358` | `e8b2c71` | Fase 1: premis NLoS diperkuat |
+| `a62f570` | `745fc8e` | Fase 2: basis data kanal dan E0 |
+| `a978ec1` | `85be266` | Fase 3: model sinyal, tracker, baseline |
+| `58de5e6` | `151dc00` | lambda 1,0 -> 10,0; Gate 3 LOLOS |
+| `c2be7ae` | `5a9ce6b` | Fase 4: environment RL |
+| `d553599` | `c5d3dfd` | Fase 5: 15 run pelatihan |
+| `7fbe517` | `7b01163` | Fase 5: 21 run selesai |
+| `cf6f4d0` | `b25b162` | Fase 6: evaluasi set test |
+| `d971177` | `8b2fe0f` | Fase 7: satu perintah untuk semua artefak |
+| `bffe21a` | `f94eaeb` | Fase 8 (A-C): A1 jadi metode utama |
+| `d078ed1` | `b1cd869` | Fase 8 (B): 9 run pelatihan |
+| `f473b05` | `76e74b6` | Fase 8 (D): evaluasi dengan B0 dan A1-FullCSI |
+| `8633b16` | `df7b673` | Fase 8: Gate 8 LOLOS |
+| `c11f162` | `36dea7a` | Fase 9: gambar dan tabel bahasa Inggris |
+| `330a95e` | `d19870f` | Fase 10: finalisasi gambar dan tabel |
+| `d05824b` | `adcbec1` | Rilis v1.0: persiapan publikasi |

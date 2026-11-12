@@ -17,3 +17,7 @@ dist/
 
 # Naskah (dikelola terpisah di Overleaf)
 paper/
+
+# File yang dibawa arsip data Zenodo saat diekstrak di root repo
+README_DATA.md
+SHA256SUMS
