@@ -2138,3 +2138,38 @@ dibandingkan antara jalur env dan jalur snapshot seperti B2 dan B3 —
 `tests/test_b0_no_ris.py` menuntut kesamaan sampai rel = 1e-9, membuktikan
 h_e sama **persis** dengan h_d, dan membuktikan fasa RIS tidak berpengaruh
 sama sekali pada B0.
+
+### Langkah B — 9 run pelatihan Fase 8
+
+JOBS=3, **38 menit, nol gagal**, nol proses yatim. A1-FullCSI berjalan 956
+langkah/detik (observasi penuh, 558 dim per frame), A1 pada Γ = 10/16
+1.651–1.653 langkah/detik.
+
+| config | metode | puncak val (3 seed) | langkah puncak | akhir | ekor |
+|---|---|---|---|---|---|
+| base (Γ = 13) | A1-FullCSI | +7,771 / +8,116 / +8,101 | 200–250k | +7,684 / +7,889 / +7,705 | +5,2% / +7,4% / +5,1% |
+| gamma10 | A1 | +8,202 / +8,359 / +8,483 | 300–350k | +7,495 / +7,458 / +7,182 | +12,5% / +11,0% / +11,8% |
+| gamma16 | A1 | +7,947 / +7,693 / +7,272 | 450–500k | +2,344 / +1,834 / +2,445 | −6,9% / −57,3% / −35,6% |
+
+**Tidak ada kurva yang masih menanjak di akhir**, jadi tidak ada yang
+diperpanjang (instruksi Fase 8: catat, jangan memperpanjang tanpa melapor).
+Ketiganya memuncak jauh sebelum 1e6 lalu turun. Rasio ekor positif pada
+Γ = 10 bukan tanda konvergensi yang belum selesai melainkan **kaki pemulihan
+parsial** dari osilasi yang sama: nilai akhirnya tetap 0,7–1,3 poin di bawah
+puncaknya.
+
+**Dua hal yang tidak diduga:**
+
+1. **Observasi penuh tidak menolong A1, dan membuatnya memuncak lebih awal.**
+   Puncak A1-FullCSI (+7,77 / +8,12 / +8,10) sedikit **di bawah** puncak A1
+   ber-observasi-parsial (+8,22 / +8,03 / +8,14), dan dicapai di 200–250 ribu
+   langkah, bukan 350–450 ribu. Menambah 384 dimensi kanal kaskade per frame
+   karena itu tidak membawa informasi yang bisa dipakai kebijakan ini —
+   bandingkan dengan pasangan inkremental M1/M2, yang juga nyaris sama
+   (+4,098 lawan +4,144 di val). Angka test-nya ada di T2 dan T3a.
+2. **Ambruknya A1 memburuk tajam saat Γ naik.** Pada Γ = 16 dB nilai akhir
+   jatuh ke +1,8…+2,4 dari puncak +7,3…+7,9 — bukan lagi osilasi melainkan
+   runtuh. Itu sejalan dengan hipotesis hinge yang belum diuji (hinge bernilai
+   nol begitu kendala terpenuhi): makin tinggi Γ, makin sempit wilayah tempat
+   gradien penjaga SCNR masih hidup, sehingga hanyutnya makin cepat terhukum.
+   Tetap **tidak diuji** — mengujinya mengubah (E9).
