@@ -2151,12 +2151,21 @@ langkah/detik (observasi penuh, 558 dim per frame), A1 pada Γ = 10/16
 | gamma10 | A1 | +8,202 / +8,359 / +8,483 | 300–350k | +7,495 / +7,458 / +7,182 | +12,5% / +11,0% / +11,8% |
 | gamma16 | A1 | +7,947 / +7,693 / +7,272 | 450–500k | +2,344 / +1,834 / +2,445 | −6,9% / −57,3% / −35,6% |
 
-**Tidak ada kurva yang masih menanjak di akhir**, jadi tidak ada yang
-diperpanjang (instruksi Fase 8: catat, jangan memperpanjang tanpa melapor).
-Ketiganya memuncak jauh sebelum 1e6 lalu turun. Rasio ekor positif pada
-Γ = 10 bukan tanda konvergensi yang belum selesai melainkan **kaki pemulihan
-parsial** dari osilasi yang sama: nilai akhirnya tetap 0,7–1,3 poin di bawah
-puncaknya.
+**Enam dari sembilan run MASIH MENANJAK di akhir** menurut kriteria Gate 5
+(ekor > 2%): ketiga A1-FullCSI (+5,1…+7,4%) dan ketiga A1 pada Γ = 10
+(+11,0…+12,5%). Dicatat di sini, **tidak diperpanjang** (instruksi Fase 8:
+catat, jangan memperpanjang tanpa melapor).
+
+Yang perlu dibaca bersamaan: menanjak di akhir **bukan** berarti anggaran
+langkahnya kurang. Ketiga kelompok memuncak jauh sebelum 1e6 (200–250k,
+300–350k, 450–500k), lalu ambruk, lalu memanjat lagi — dan **tidak satu pun
+dari sembilan run yang kaki pemulihannya melampaui puncak pertamanya**.
+Nilai akhir tetap 0,1–0,2 poin (A1-FullCSI) sampai 0,7–1,3 poin (Γ = 10) di
+bawah puncaknya, dan checkpoint yang dilaporkan selalu puncak pertama. Jadi
+yang terlihat adalah osilasi yang sama seperti pada A1 Γ = 13 di Fase 5,
+bukan pelatihan yang terpotong. Memperpanjang ke 2e6 akan menjawab apakah
+kaki pemulihan akhirnya melewati puncak pertama; itu pertanyaan terbuka,
+bukan perbaikan yang jelas, dan menunggu keputusan.
 
 **Dua hal yang tidak diduga:**
 

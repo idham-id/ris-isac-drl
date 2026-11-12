@@ -199,9 +199,10 @@ def t3_ablation(e5) -> str:
     if {"A1", "A1-FullCSI"} <= set(by_method):
         delta = (float(by_method["A1-FullCSI"]["reward_per_step"])
                  - float(by_method["A1"]["reward_per_step"]))
-        note += (f"Harga observasi parsial pada metode utama: "
-                 f"{number(delta, 3, True)} reward per langkah "
-                 "(A1-FullCSI dikurangi A1).")
+        note += ("Ablasi observasi pada metode utama, A1-FullCSI dikurangi "
+                 f"A1: {number(delta, 3, True)} reward per langkah. "
+                 "Nilai negatif berarti observasi penuh TIDAK menolong; "
+                 "lihat §9 untuk ujinya.")
     return latex_table(
         ["Varian", "Episode", "Reward/langkah", "Rate min.",
          "Pemenuhan SCNR"], rows,

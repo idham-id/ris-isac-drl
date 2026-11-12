@@ -273,14 +273,18 @@ METHOD_COLORS = {
     "M1": OKABE_ITO["blue"],
     "M2": OKABE_ITO["vermillion"],
     "A1": OKABE_ITO["green"],
-    # A1-FullCSI adalah A1 dengan observasi penuh: warna yang sama dengan A1
-    # akan menyesatkan, warna kategorikal baru akan menyiratkan metode yang
-    # tidak berhubungan. Dipakai kuning Okabe-Ito, tetangga terdekat hijau
-    # pada palet yang sama.
-    "A1-FullCSI": OKABE_ITO["yellow"],
-    # B0 tanpa RIS sama sekali: lantai sistem, digambar sebagai abu-abu paling
-    # terang supaya terbaca sebagai batas bawah, bukan sebagai pesaing.
-    "B0": "#C9C9C9",
+    # A1-FullCSI adalah A1 dengan observasi penuh: HUE YANG SAMA dengan A1,
+    # lebih gelap. Pasangan dalam satu hue menyampaikan "metode yang sama,
+    # setelan berbeda", yang memang hubungannya. Kuning Okabe-Ito sempat
+    # dipakai di sini dan dibuang: rasio kontrasnya terhadap latar putih
+    # sekitar 1,2:1, sehingga kurvanya nyaris tak terbaca di F4.
+    "A1-FullCSI": "#00624A",
+    # B0 tanpa RIS sama sekali. BUKAN abu-abu: keluarga abu-abu di bawah
+    # adalah tangga oracle, yaitu langit-langit, sedangkan B0 adalah lantai --
+    # memberinya abu-abu termuda akan membuatnya terbaca sebagai "oracle yang
+    # paling basi". Dipakai sky Okabe-Ito, satu-satunya warna palet yang
+    # belum terpakai dan masih terbaca di atas putih.
+    "B0": OKABE_ITO["sky"],
     "B1": OKABE_ITO["purple"],
     "B2": OKABE_ITO["orange"],
     # Keluarga oracle digambar sebagai tangga ABU-ABU, bukan sebagai tiga
@@ -319,7 +323,10 @@ def plot_f4_training(curves: dict, out_path, baselines: dict | None = None,
     import matplotlib.pyplot as plt
 
     fig, ax = plt.subplots(figsize=(7.0, 4.4), constrained_layout=True)
-    for paper_id, curve in curves.items():
+    # Urutan legenda mengikuti METHOD_ORDER, bukan urutan kunci dict: dict
+    # datang dari urutan METHODS di train.py, yang masih M1 lebih dulu.
+    for paper_id in _ordered(curves):
+        curve = curves[paper_id]
         steps = np.asarray(curve["timesteps"], dtype=float)
         values = np.asarray([curve["seeds"][s] for s in sorted(curve["seeds"])],
                             dtype=float)
