@@ -288,11 +288,29 @@ disentuh, sehingga 21 run Fase 5 tetap sah.
 - [x] F2 baru (dua panel), F2b diserap.
 
 **Langkah D — setelah pelatihan selesai.**
-- [ ] Evaluasi set test: A1-FullCSI, A1 pada Γ = 10/16, dan B0 pada ketiga Γ.
-- [ ] T2, T3a, F4, F5, F7, F8 diperbarui.
-- [ ] `make_figures.py`, `check_equations.py`, `pytest`, Gate 6, Gate 7.
+- [x] Evaluasi set test: A1-FullCSI, A1 pada Γ = 10/16, dan B0 pada ketiga Γ.
+- [x] T2, T3a, F4, F5, F7, F8 diperbarui.
+- [x] `make_figures.py`, `check_equations.py`, `pytest`, Gate 6, Gate 7.
 
 **Gate 8:** semua tes lulus termasuk tes B0; 9 run baru selesai dengan
 `done.json` dan checkpoint terbaik di val; T2 memuat B0 dan A1-FullCSI
 beserta CI; F2 baru dan F4/F5/F7/F8 diperbarui; `manifest.json` mencatat asal
 semua artefak.
+
+> **Status 2026-11-12: LOLOS.**
+>
+> | kriteria | hasil |
+> |---|---|
+> | tes | **188 lulus**, 0 gagal (181 + 7 tes B0 baru) |
+> | 9 run baru | semuanya punya `done.json`, `model_best.zip`, `vecnormalize_best.pkl`, `eval_val.csv`; 38 menit, nol gagal |
+> | T2 | 10 baris dengan CI bootstrap; B0 dan A1-FullCSI termuat |
+> | gambar | F2 baru (dua panel), F4/F5/F7/F8 diperbarui; **8 gambar** (PNG + PDF) + 4 tabel LaTeX |
+> | manifest | 20 artefak, sumber e0/e1/gate5/eval semuanya `2ac2654fe51c` |
+> | Gate 6 | LOLOS | 
+> | Gate 7 | LOLOS pada pohon git bersih |
+>
+> **Enam dari sembilan run baru masih menanjak di akhir** menurut kriteria
+> Gate 5 (ekor > 2%): ketiga A1-FullCSI dan ketiga A1 pada Γ = 10. Dicatat,
+> **tidak diperpanjang**. Tidak satu pun dari sembilan kaki pemulihan itu
+> melampaui puncak pertamanya, jadi checkpoint yang dilaporkan tidak berubah;
+> lihat `docs/LOG.md` untuk angka per seed.

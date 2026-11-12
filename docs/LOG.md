@@ -2182,3 +2182,82 @@ bukan perbaikan yang jelas, dan menunggu keputusan.
    nol begitu kendala terpenuhi): makin tinggi Γ, makin sempit wilayah tempat
    gradien penjaga SCNR masih hidup, sehingga hanyutnya makin cepat terhukum.
    Tetap **tidak diuji** — mengujinya mengubah (E9).
+
+### Langkah D — evaluasi set test; Gate 6, Gate 7, Gate 8 LOLOS
+
+Ketiga config Γ dievaluasi ulang dengan B0 dan A1-FullCSI. T2 pada Γ = 13 dB,
+P_max = 30 dBm (CI 95% bootstrap atas episode, dikelompokkan per seed):
+
+| metode | reward/langkah | rate min. | pemenuhan SCNR | galat tracker (m) |
+|---|---|---|---|---|
+| B0 No-RIS | **−1,696** [−1,938; −1,451] | 4,33 | 0,324 | 1,79 |
+| B1 Random | −1,120 | 4,02 | 0,353 | 1,07 |
+| B2 Geometric | +2,143 | 2,15 | 0,997 | 0,05 |
+| B3 Oracle-GD | +11,542 | 11,54 | 1,000 | 0,18 |
+| B4-D5 | +8,454 | 8,98 | 0,865 | 0,18 |
+| B4-D10 | +7,840 | 8,48 | 0,852 | 0,19 |
+| **A1 (utama)** | **+8,334** [8,291; 8,377] | 8,46 | 0,964 | 0,11 |
+| A1-FullCSI | +8,181 [8,121; 8,239] | 8,45 | 0,941 | 0,12 |
+| M1 (ablasi) | +3,590 | 8,18 | 0,398 | 1,05 |
+| M2 (ablasi) | +3,603 | 8,44 | 0,380 | 1,17 |
+
+**Sumbangan RIS, diukur langsung (A1 − B0):** +10,030 reward per langkah
+(p < 0,0001), rate minimum +4,129 (4,33 → 8,46, yaitu **1,95×**), pemenuhan
+SCNR +0,640 (0,324 → 0,964). Inilah angka yang boleh dipakai untuk klaim
+"RIS menambah sekian"; B1 dan B2 tidak bisa dipakai untuk itu karena keduanya
+tetap memakai RIS.
+
+**Harga observasi parsial: nol, dan tandanya terbalik.** A1 dikurangi
+A1-FullCSI memberi **+0,152** reward per langkah (p = 0,2546), rate minimum
++0,004 (p = 0,9523), pemenuhan SCNR +0,022 (p = 0,3513). Observasi penuh —
+384 dimensi kanal kaskade tambahan per frame — **tidak menolong sama sekali**
+dan titik estimasinya justru sedikit lebih buruk. CI bootstrap tingkat
+episode keduanya tidak tumpang tindih, tetapi uji Welch atas tiga rata-rata
+per seed tidak menolak; dengan n = 3 daya ujinya kecil, jadi yang benar
+dinyatakan adalah "tidak ada bukti observasi parsial merugikan", bukan
+"observasi parsial lebih baik". Pasangan inkremental M1/M2 memberi kesimpulan
+yang sama (+3,590 lawan +3,603).
+
+**A1 setara oracle ber-CSI-usang-5-langkah.** A1 − B4-D5 = −0,120 reward per
+langkah, p = 0,1613 (tidak berbeda bermakna); A1 − B4-D10 = +0,494,
+p = 0,0122 (A1 menang). Rate minimum A1 adalah **73,3%** rate minimum B3,
+bukan ≥ 80% yang dihipotesiskan — dicatat apa adanya di §1.1.
+
+### Empat hal yang bertentangan dengan dugaan
+
+1. **Observasi penuh tidak menolong** (di atas). Dugaan sebelum Fase 8 adalah
+   bahwa A1 berhasil karena fasa absolut *dan* bahwa CSI penuh akan menambah
+   sedikit lagi. Yang kedua salah.
+2. **B0 tanpa RIS punya rate minimum LEBIH TINGGI daripada B2 Geometric**
+   (4,33 lawan 2,15). B2 membakar rate untuk menahan pemenuhan SCNR di 0,997;
+   B0 tidak sanggup memenuhi kendala, jadi ia menyimpan dayanya untuk
+   komunikasi. Perbandingan satu metrik karena itu menyesatkan di kedua arah,
+   dan reward (E9) yang memuat keduanya adalah besaran yang benar untuk
+   memeringkat.
+3. **M1/M2 nyaris tidak lebih baik daripada TANPA RIS pada sisi sensing.**
+   Pada sapuan P_max, pemenuhan SCNR B0 naik 0,041 → 0,709 (20 → 40 dBm),
+   M1 0,063 → 0,820, M2 0,063 → 0,812 — ketiganya praktis satu kurva,
+   sedangkan A1 sudah 0,709 di **20 dBm** dan 0,964 di 30 dBm. Jadi fasa
+   inkremental pada κ ≤ 0,5 membuang hampir seluruh keuntungan sensing yang
+   disediakan RIS. Itu argumen terkuat untuk menjadikan A1 metode utama, dan
+   baru terlihat setelah B0 ada sebagai lantainya.
+4. **SCNR ideal E1 tanpa RIS memenuhi Γ di 64,5% ROI, tetapi B0 dalam loop
+   hanya 0,324.** Keduanya konsisten: E1 menghitung ρ = 1 (seluruh daya untuk
+   sensing), tanpa clutter, dan dengan beam MRT pada kanal target yang
+   sebenarnya. B0 dalam loop harus membagi daya (ρ = 0,1 terpilih di val),
+   menanggung clutter ξ, dan melayani dua pengguna sekaligus. Selisih itu
+   adalah harga menjalankan ISAC, bukan ketidakcocokan model.
+
+### Catatan untuk naskah
+
+* **B0 pada F8 tidak monoton terhadap Γ** (pemenuhan 0,406 / 0,324 / 0,360
+  pada Γ = 10 / 13 / 16) karena grid val memilih titik kerja yang berbeda per
+  Γ: ρ = 0,1 pada Γ = 10 dan 13, lalu ρ = 0,6 pada Γ = 16, yang menjatuhkan
+  rate minimumnya dari 4,33 ke 1,36. Itu perilaku baseline yang disetel
+  dengan benar, bukan cacat; sebutkan di keterangan gambar.
+* **Biaya komputasi (E6) diukur ulang:** A1 0,152 ms per keputusan, M1 0,183,
+  M2 0,198, A1-FullCSI 0,208, B2 0,086; B3 daring 2.079,2 ms di GPU
+  (**13.708×** lebih lambat daripada A1) dan 3,28 ms teramortisasi. Waktu
+  latih: A1 9,4 menit, M1 9,5, M2 16,3, A1-FullCSI 17,4.
+* **Gate 7 diperiksa ulang pada pohon git bersih:** 8 gambar (PNG + PDF) dan
+  4 tabel LaTeX dibuat ulang di direktori kosong; F2b tidak lagi diharapkan.
